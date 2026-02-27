@@ -12,6 +12,7 @@ class AppSettings {
   final String downloadTreeUri; // SAF persistable tree URI
   final bool autoFallback;
   final bool autoSkipUnavailableTracks;
+  final String playerMode; // 'internal' or 'external'
   final bool smartQueueEnabled; // Enable smart curated autoplay queue
   final bool embedMetadata; // Master switch for metadata/cover/lyrics embedding
   final bool embedLyrics;
@@ -92,6 +93,7 @@ class AppSettings {
     this.downloadTreeUri = '',
     this.autoFallback = true,
     this.autoSkipUnavailableTracks = true,
+    this.playerMode = 'internal',
     this.smartQueueEnabled = true,
     this.embedMetadata = true,
     this.embedLyrics = true,
@@ -160,6 +162,7 @@ class AppSettings {
     String? downloadTreeUri,
     bool? autoFallback,
     bool? autoSkipUnavailableTracks,
+    String? playerMode,
     bool? smartQueueEnabled,
     bool? embedMetadata,
     bool? embedLyrics,
@@ -222,6 +225,7 @@ class AppSettings {
       autoFallback: autoFallback ?? this.autoFallback,
       autoSkipUnavailableTracks:
           autoSkipUnavailableTracks ?? this.autoSkipUnavailableTracks,
+      playerMode: playerMode ?? this.playerMode,
       smartQueueEnabled: smartQueueEnabled ?? this.smartQueueEnabled,
       embedMetadata: embedMetadata ?? this.embedMetadata,
       embedLyrics: embedLyrics ?? this.embedLyrics,

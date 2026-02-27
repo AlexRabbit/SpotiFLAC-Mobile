@@ -284,6 +284,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
     _saveSettings();
   }
 
+  void setPlayerMode(String mode) {
+    final normalized = mode == 'external' ? 'external' : 'internal';
+    state = state.copyWith(playerMode: normalized);
+    _saveSettings();
+  }
+
   void setSmartQueueEnabled(bool enabled) {
     state = state.copyWith(smartQueueEnabled: enabled);
     _saveSettings();

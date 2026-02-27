@@ -17,6 +17,7 @@ import 'package:spotiflac_android/services/ffmpeg_service.dart';
 import 'package:spotiflac_android/services/library_database.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
 import 'package:spotiflac_android/utils/artist_utils.dart';
+import 'package:spotiflac_android/utils/file_access.dart';
 import 'package:spotiflac_android/utils/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1647,6 +1648,16 @@ class PlaybackController extends Notifier<PlaybackState> {
         !_isPlayRequestCurrent(expectedRequestEpoch)) {
       return;
     }
+
+    final handledByExternal = await _tryPlayWithExternalPlayerIfConfigured(
+      uri: uri,
+      item: item,
+      expectedRequestEpoch: expectedRequestEpoch,
+    );
+    if (handledByExternal) {
+      return;
+    }
+
     final sourceUrl = uri.toString();
     await FFmpegService.activatePreparedNativeDashManifest(sourceUrl);
     if (!FFmpegService.isActiveLiveDecryptedUrl(sourceUrl)) {
@@ -1717,6 +1728,78 @@ class PlaybackController extends Notifier<PlaybackState> {
       _setPlaybackError(e.toString(), type: 'playback_failed');
       rethrow;
     }
+  }
+
+  Future<bool> _tryPlayWithExternalPlayerIfConfigured({
+    required Uri uri,
+    required PlaybackItem item,
+    int? expectedRequestEpoch,
+  }) async {
+    final settings = ref.read(settingsProvider);
+    if (settings.playerMode != 'external') return false;
+    if (!item.isLocal) return false;
+
+    final externalPath = _externalPathFromPlaybackUri(uri);
+    if (externalPath == null || externalPath.isEmpty) return false;
+
+    _log.d('Opening with external player: $externalPath');
+    _updateMediaItemNotification(item);
+
+    try {
+      await openFile(externalPath);
+      if (expectedRequestEpoch != null &&
+          !_isPlayRequestCurrent(expectedRequestEpoch)) {
+        return true;
+      }
+      state = state.copyWith(
+        currentItem: item,
+        isLoading: false,
+        isBuffering: false,
+        isPlaying: false,
+        seekSupported: false,
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        duration: _fallbackDurationForItem(item),
+        clearError: true,
+      );
+      _syncServicePlaybackState(ProcessingState.idle, false);
+      unawaited(_savePlaybackSnapshot());
+      return true;
+    } catch (e) {
+      if (expectedRequestEpoch != null &&
+          !_isPlayRequestCurrent(expectedRequestEpoch)) {
+        return true;
+      }
+      _log.w('External player open failed: $e');
+      state = state.copyWith(
+        isLoading: false,
+        isBuffering: false,
+        isPlaying: false,
+      );
+      _setPlaybackError(
+        'Failed to open in external player: $e',
+        type: 'external_player_failed',
+      );
+      return true;
+    }
+  }
+
+  String? _externalPathFromPlaybackUri(Uri uri) {
+    if (uri.scheme == 'content') {
+      return uri.toString();
+    }
+    if (uri.scheme == 'file') {
+      try {
+        return uri.toFilePath();
+      } catch (_) {
+        return uri.path.isNotEmpty ? uri.path : null;
+      }
+    }
+    if (!uri.hasScheme) {
+      final asString = uri.toString().trim();
+      return asString.isNotEmpty ? asString : null;
+    }
+    return null;
   }
 
   // ─── Lyrics fetching + parsing ───────────────────────────────────────────
