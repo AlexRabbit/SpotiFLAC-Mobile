@@ -157,6 +157,8 @@ type AlbumResponsePayload struct {
 }
 
 type PlaylistInfoMetadata struct {
+	Name   string `json:"name,omitempty"`
+	Images string `json:"images,omitempty"`
 	Tracks struct {
 		Total int `json:"total"`
 	} `json:"tracks"`
