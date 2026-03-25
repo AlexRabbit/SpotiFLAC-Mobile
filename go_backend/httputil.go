@@ -31,7 +31,7 @@ func getRandomUserAgent() string {
 
 const (
 	DefaultTimeout    = 60 * time.Second
-	DownloadTimeout   = 120 * time.Second
+	DownloadTimeout   = 24 * time.Hour
 	SongLinkTimeout   = 30 * time.Second
 	DefaultMaxRetries = 3
 	DefaultRetryDelay = 1 * time.Second
@@ -346,11 +346,12 @@ func calculateNextDelay(currentDelay time.Duration, config RetryConfig) time.Dur
 	return min(nextDelay, config.MaxDelay)
 }
 
-// Returns 60 seconds as default if header is missing or invalid
+// Returns 0 if the header is missing or invalid so callers can keep their
+// normal exponential backoff instead of stalling for an arbitrary minute.
 func getRetryAfterDuration(resp *http.Response) time.Duration {
 	retryAfter := resp.Header.Get("Retry-After")
 	if retryAfter == "" {
-		return 60 * time.Second // Default wait time
+		return 0
 	}
 
 	if seconds, err := strconv.Atoi(retryAfter); err == nil {
@@ -364,7 +365,7 @@ func getRetryAfterDuration(resp *http.Response) time.Duration {
 		}
 	}
 
-	return 60 * time.Second // Default
+	return 0
 }
 
 func ReadResponseBody(resp *http.Response) ([]byte, error) {

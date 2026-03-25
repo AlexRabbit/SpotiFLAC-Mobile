@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:spotiflac_android/models/track.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
 import 'package:spotiflac_android/utils/logger.dart';
+import 'package:spotiflac_android/utils/string_utils.dart';
 import 'package:spotiflac_android/providers/settings_provider.dart';
 import 'package:spotiflac_android/providers/extension_provider.dart';
 
@@ -18,7 +19,7 @@ class TrackState {
   final String? artistName;
   final String? coverUrl;
   final String? headerImageUrl; // Artist header image for background
-  final int? monthlyListeners; // Artist monthly listeners
+  final int? monthlyListeners;
   final List<ArtistAlbum>? artistAlbums; // For artist page
   final List<Track>? artistTopTracks; // Artist's popular tracks
   final List<SearchArtist>? searchArtists; // For search results
@@ -30,6 +31,8 @@ class TrackState {
   searchExtensionId; // Extension ID used for current search results
   final String?
   selectedSearchFilter; // Currently selected search filter (e.g., "track", "album", "artist", "playlist")
+  final String?
+  searchSource; // Built-in search provider used for current results (e.g., "deezer", "tidal", "qobuz")
 
   const TrackState({
     this.tracks = const [],
@@ -52,6 +55,7 @@ class TrackState {
     this.isShowingRecentAccess = false,
     this.searchExtensionId,
     this.selectedSearchFilter,
+    this.searchSource,
   });
 
   bool get hasContent =>
@@ -83,6 +87,8 @@ class TrackState {
     String? searchExtensionId,
     String? selectedSearchFilter,
     bool clearSelectedSearchFilter = false,
+    String? searchSource,
+    bool clearSearchSource = false,
   }) {
     return TrackState(
       tracks: tracks ?? this.tracks,
@@ -108,6 +114,9 @@ class TrackState {
       selectedSearchFilter: clearSelectedSearchFilter
           ? null
           : (selectedSearchFilter ?? this.selectedSearchFilter),
+      searchSource: clearSearchSource
+          ? null
+          : (searchSource ?? this.searchSource),
     );
   }
 }
@@ -278,7 +287,9 @@ class TrackNotifier extends Notifier<TrackState> {
               playlistName: type == 'playlist'
                   ? result['name'] as String?
                   : null,
-              coverUrl: result['cover_url'] as String?,
+              coverUrl: normalizeCoverReference(
+                result['cover_url']?.toString(),
+              ),
               searchExtensionId: extensionId,
             );
             return;
@@ -305,10 +316,12 @@ class TrackNotifier extends Notifier<TrackState> {
               isLoading: false,
               artistId: artistData['id'] as String?,
               artistName: artistData['name'] as String?,
-              coverUrl:
-                  artistData['image_url'] as String? ??
-                  artistData['images'] as String?,
-              headerImageUrl: artistData['header_image'] as String?,
+              coverUrl: normalizeRemoteHttpUrl(
+                (artistData['image_url'] ?? artistData['images'])?.toString(),
+              ),
+              headerImageUrl: normalizeRemoteHttpUrl(
+                artistData['header_image']?.toString(),
+              ),
               monthlyListeners: artistData['listeners'] as int?,
               artistAlbums: albums,
               artistTopTracks: topTracks.isNotEmpty ? topTracks : null,
@@ -349,7 +362,7 @@ class TrackNotifier extends Notifier<TrackState> {
             isLoading: false,
             albumId: id,
             albumName: albumInfo['name'] as String?,
-            coverUrl: albumInfo['images'] as String?,
+            coverUrl: normalizeRemoteHttpUrl(albumInfo['images']?.toString()),
           );
           _preWarmCacheForTracks(tracks);
         } else if (type == 'playlist') {
@@ -363,7 +376,9 @@ class TrackNotifier extends Notifier<TrackState> {
             tracks: tracks,
             isLoading: false,
             playlistName: playlistInfo['name'] as String?,
-            coverUrl: playlistInfo['images'] as String?,
+            coverUrl: normalizeRemoteHttpUrl(
+              playlistInfo['images']?.toString(),
+            ),
           );
           _preWarmCacheForTracks(tracks);
         } else if (type == 'artist') {
@@ -377,7 +392,78 @@ class TrackNotifier extends Notifier<TrackState> {
             isLoading: false,
             artistId: artistInfo['id'] as String?,
             artistName: artistInfo['name'] as String?,
-            coverUrl: artistInfo['images'] as String?,
+            coverUrl: normalizeRemoteHttpUrl(artistInfo['images']?.toString()),
+            artistAlbums: albums,
+          );
+        }
+        return;
+      }
+
+      if (url.contains('qobuz.com') || url.startsWith('qobuzapp://')) {
+        _log.i('Detected Qobuz URL, parsing...');
+        final parsed = await PlatformBridge.parseQobuzUrl(url);
+        if (!_isRequestValid(requestId)) return;
+
+        final type = parsed['type'] as String;
+        final id = parsed['id'] as String;
+
+        final metadata = await PlatformBridge.getQobuzMetadata(type, id);
+        if (!_isRequestValid(requestId)) return;
+
+        if (type == 'track') {
+          final trackData = metadata['track'] as Map<String, dynamic>;
+          final track = _parseTrack(trackData);
+          state = TrackState(
+            tracks: [track],
+            isLoading: false,
+            coverUrl: track.coverUrl,
+          );
+        } else if (type == 'album') {
+          final albumInfo = metadata['album_info'] as Map<String, dynamic>;
+          final trackList = metadata['track_list'] as List<dynamic>;
+          final tracks = trackList
+              .map((t) => _parseTrack(t as Map<String, dynamic>))
+              .toList();
+          state = TrackState(
+            tracks: tracks,
+            isLoading: false,
+            albumId: 'qobuz:$id',
+            albumName: albumInfo['name'] as String?,
+            coverUrl: normalizeRemoteHttpUrl(albumInfo['images']?.toString()),
+          );
+          _preWarmCacheForTracks(tracks);
+        } else if (type == 'playlist') {
+          final playlistInfo =
+              metadata['playlist_info'] as Map<String, dynamic>;
+          final trackList = metadata['track_list'] as List<dynamic>;
+          final tracks = trackList
+              .map((t) => _parseTrack(t as Map<String, dynamic>))
+              .toList();
+          final owner = playlistInfo['owner'] as Map<String, dynamic>?;
+          final playlistName =
+              (playlistInfo['name'] ?? owner?['name']) as String?;
+          final coverUrl = normalizeRemoteHttpUrl(
+            (playlistInfo['images'] ?? owner?['images'])?.toString(),
+          );
+          state = TrackState(
+            tracks: tracks,
+            isLoading: false,
+            playlistName: playlistName,
+            coverUrl: coverUrl,
+          );
+          _preWarmCacheForTracks(tracks);
+        } else if (type == 'artist') {
+          final artistInfo = metadata['artist_info'] as Map<String, dynamic>;
+          final albumsList = metadata['albums'] as List<dynamic>;
+          final albums = albumsList
+              .map((a) => _parseArtistAlbum(a as Map<String, dynamic>))
+              .toList();
+          state = TrackState(
+            tracks: [],
+            isLoading: false,
+            artistId: artistInfo['id'] as String?,
+            artistName: artistInfo['name'] as String?,
+            coverUrl: normalizeRemoteHttpUrl(artistInfo['images']?.toString()),
             artistAlbums: albums,
           );
         }
@@ -392,66 +478,78 @@ class TrackNotifier extends Notifier<TrackState> {
         final type = parsed['type'] as String;
         final id = parsed['id'] as String;
 
-        _log.i('Tidal URL parsed: type=$type, id=$id');
+        final metadata = await PlatformBridge.getTidalMetadata(type, id);
+        if (!_isRequestValid(requestId)) return;
 
-        // For track URLs, convert to Spotify/Deezer and fetch metadata from there
         if (type == 'track') {
-          try {
-            _log.i('Converting Tidal track to Spotify/Deezer via SongLink...');
-            final conversion = await PlatformBridge.convertTidalToSpotifyDeezer(
-              url,
-            );
-            if (!_isRequestValid(requestId)) return;
-
-            final spotifyUrl = conversion['spotify_url'] as String?;
-            final deezerUrl = conversion['deezer_url'] as String?;
-
-            if (spotifyUrl != null && spotifyUrl.isNotEmpty) {
-              _log.i('Found Spotify URL: $spotifyUrl, fetching metadata...');
-              final metadata =
-                  await PlatformBridge.getSpotifyMetadataWithFallback(
-                    spotifyUrl,
-                  );
-              if (!_isRequestValid(requestId)) return;
-
-              final trackData = metadata['track'] as Map<String, dynamic>;
-              final track = _parseTrack(trackData);
-              state = TrackState(
-                tracks: [track],
-                isLoading: false,
-                coverUrl: track.coverUrl,
-              );
-              return;
-            } else if (deezerUrl != null && deezerUrl.isNotEmpty) {
-              _log.i('Found Deezer URL: $deezerUrl, fetching metadata...');
-              final deezerParsed = await PlatformBridge.parseDeezerUrl(
-                deezerUrl,
-              );
-              final metadata = await PlatformBridge.getDeezerMetadata(
-                'track',
-                deezerParsed['id'] as String,
-              );
-              if (!_isRequestValid(requestId)) return;
-
-              final trackData = metadata['track'] as Map<String, dynamic>;
-              final track = _parseTrack(trackData);
-              state = TrackState(
-                tracks: [track],
-                isLoading: false,
-                coverUrl: track.coverUrl,
-              );
-              return;
-            }
-          } catch (e) {
-            _log.w('Failed to convert Tidal URL via SongLink: $e');
-          }
+          final trackData = metadata['track'] as Map<String, dynamic>;
+          final track = _parseTrack(trackData);
+          state = TrackState(
+            tracks: [track],
+            isLoading: false,
+            coverUrl: track.coverUrl,
+          );
+        } else if (type == 'album') {
+          final albumInfo = metadata['album_info'] as Map<String, dynamic>;
+          final trackList = metadata['track_list'] as List<dynamic>;
+          final tracks = trackList
+              .map((t) => _parseTrack(t as Map<String, dynamic>))
+              .toList();
+          state = TrackState(
+            tracks: tracks,
+            isLoading: false,
+            albumId: 'tidal:$id',
+            albumName: albumInfo['name'] as String?,
+            coverUrl: normalizeRemoteHttpUrl(albumInfo['images']?.toString()),
+          );
+          _preWarmCacheForTracks(tracks);
+        } else if (type == 'playlist') {
+          final playlistInfo =
+              metadata['playlist_info'] as Map<String, dynamic>;
+          final trackList = metadata['track_list'] as List<dynamic>;
+          final tracks = trackList
+              .map((t) => _parseTrack(t as Map<String, dynamic>))
+              .toList();
+          final owner = playlistInfo['owner'] as Map<String, dynamic>?;
+          final playlistName =
+              (playlistInfo['name'] ?? owner?['name']) as String?;
+          final coverUrl = normalizeRemoteHttpUrl(
+            (playlistInfo['images'] ?? owner?['images'])?.toString(),
+          );
+          state = TrackState(
+            tracks: tracks,
+            isLoading: false,
+            playlistName: playlistName,
+            coverUrl: coverUrl,
+          );
+          _preWarmCacheForTracks(tracks);
+        } else if (type == 'artist') {
+          final artistInfo = metadata['artist_info'] as Map<String, dynamic>;
+          final albumsList = metadata['albums'] as List<dynamic>;
+          final albums = albumsList
+              .map((a) => _parseArtistAlbum(a as Map<String, dynamic>))
+              .toList();
+          state = TrackState(
+            tracks: [],
+            isLoading: false,
+            artistId: artistInfo['id'] as String?,
+            artistName: artistInfo['name'] as String?,
+            coverUrl: normalizeRemoteHttpUrl(artistInfo['images']?.toString()),
+            artistAlbums: albums,
+          );
         }
+        return;
+      }
 
-        // For album/artist/playlist, not yet supported
+      // If URL doesn't match any known service, it's unrecognized
+      final isSpotifyUrl =
+          url.contains('open.spotify.com') ||
+          url.contains('spotify.link') ||
+          url.startsWith('spotify:');
+      if (!isSpotifyUrl) {
         state = TrackState(
           isLoading: false,
-          error:
-              'Tidal $type links are not fully supported yet. Only track links work via SongLink conversion.',
+          error: 'url_not_recognized',
           hasSearchText: state.hasSearchText,
         );
         return;
@@ -491,7 +589,7 @@ class TrackNotifier extends Notifier<TrackState> {
           isLoading: false,
           albumId: parsed['id'] as String?,
           albumName: albumInfo['name'] as String?,
-          coverUrl: albumInfo['images'] as String?,
+          coverUrl: normalizeRemoteHttpUrl(albumInfo['images']?.toString()),
         );
         _preWarmCacheForTracks(tracks);
       } else if (type == 'playlist') {
@@ -501,11 +599,16 @@ class TrackNotifier extends Notifier<TrackState> {
             .map((t) => _parseTrack(t as Map<String, dynamic>))
             .toList();
         final owner = playlistInfo['owner'] as Map<String, dynamic>?;
+        final playlistName =
+            (playlistInfo['name'] ?? owner?['name']) as String?;
+        final coverUrl = normalizeRemoteHttpUrl(
+          (playlistInfo['images'] ?? owner?['images'])?.toString(),
+        );
         state = TrackState(
           tracks: tracks,
           isLoading: false,
-          playlistName: owner?['name'] as String?,
-          coverUrl: owner?['images'] as String?,
+          playlistName: playlistName,
+          coverUrl: coverUrl,
         );
         _preWarmCacheForTracks(tracks);
       } else if (type == 'artist') {
@@ -519,7 +622,7 @@ class TrackNotifier extends Notifier<TrackState> {
           isLoading: false,
           artistId: artistInfo['id'] as String?,
           artistName: artistInfo['name'] as String?,
-          coverUrl: artistInfo['images'] as String?,
+          coverUrl: normalizeRemoteHttpUrl(artistInfo['images']?.toString()),
           artistAlbums: albums,
         );
       }
@@ -535,8 +638,8 @@ class TrackNotifier extends Notifier<TrackState> {
 
   Future<void> search(
     String query, {
-    String? metadataSource,
     String? filterOverride,
+    String? builtInSearchProvider,
   }) async {
     final requestId = ++_currentRequestId;
 
@@ -556,65 +659,72 @@ class TrackNotifier extends Notifier<TrackState> {
       final hasActiveMetadataExtensions = extensionState.extensions.any(
         (e) => e.enabled && e.hasMetadataProvider,
       );
-      final searchProvider = settings.searchProvider;
-      final useExtensions =
-          settings.useExtensionProviders &&
-          hasActiveMetadataExtensions &&
-          searchProvider != null &&
-          searchProvider.isNotEmpty;
+      final includeExtensions =
+          settings.useExtensionProviders && hasActiveMetadataExtensions;
 
-      final source = metadataSource ?? 'deezer';
+      // Determine the effective search provider
+      final effectiveProvider = builtInSearchProvider ?? 'deezer';
 
       _log.i(
-        'Search started: source=$source, query="$query", useExtensions=$useExtensions, filter=$currentFilter',
+        'Search started: provider=$effectiveProvider, query="$query", includeExtensions=$includeExtensions, filter=$currentFilter',
       );
 
       Map<String, dynamic> results;
-      List<Track> extensionTracks = [];
+      List<Map<String, dynamic>> metadataTrackResults = [];
 
-      if (useExtensions) {
+      // Only use metadata providers for Deezer search (default behavior)
+      if (effectiveProvider == 'deezer') {
         try {
-          _log.d('Calling extension search API...');
-          final extResults = await PlatformBridge.searchTracksWithExtensions(
-            query,
-            limit: 20,
+          _log.d('Calling metadata provider search API...');
+          metadataTrackResults =
+              await PlatformBridge.searchTracksWithMetadataProviders(
+                query,
+                limit: 20,
+                includeExtensions: includeExtensions,
+              );
+          _log.i(
+            'Metadata providers returned ${metadataTrackResults.length} tracks',
           );
-          _log.i('Extensions returned ${extResults.length} tracks');
-
-          for (final t in extResults) {
-            try {
-              extensionTracks.add(_parseSearchTrack(t));
-            } catch (e) {
-              _log.e('Failed to parse extension track: $e', e);
-            }
-          }
         } catch (e) {
-          _log.w('Extension search failed, falling back to built-in: $e');
+          _log.w(
+            'Metadata provider search failed, falling back to Deezer tracks: $e',
+          );
         }
       }
 
-      if (source == 'deezer') {
-        _log.d('Calling Deezer search API...');
-        results = await PlatformBridge.searchDeezerAll(
-          query,
-          trackLimit: 20,
-          artistLimit: 2,
-          filter: currentFilter,
-        );
-        _log.i(
-          'Deezer returned ${(results['tracks'] as List?)?.length ?? 0} tracks, ${(results['artists'] as List?)?.length ?? 0} artists, ${(results['albums'] as List?)?.length ?? 0} albums',
-        );
-      } else {
-        _log.d('Calling Spotify search API...');
-        results = await PlatformBridge.searchSpotifyAll(
-          query,
-          trackLimit: 20,
-          artistLimit: 2,
-        );
-        _log.i(
-          'Spotify returned ${(results['tracks'] as List?)?.length ?? 0} tracks, ${(results['artists'] as List?)?.length ?? 0} artists',
-        );
+      // Call the appropriate search API
+      switch (effectiveProvider) {
+        case 'tidal':
+          _log.d('Calling Tidal search API...');
+          results = await PlatformBridge.searchTidalAll(
+            query,
+            trackLimit: 20,
+            artistLimit: 2,
+            filter: currentFilter,
+          );
+          break;
+        case 'qobuz':
+          _log.d('Calling Qobuz search API...');
+          results = await PlatformBridge.searchQobuzAll(
+            query,
+            trackLimit: 20,
+            artistLimit: 2,
+            filter: currentFilter,
+          );
+          break;
+        default:
+          _log.d('Calling Deezer search API...');
+          results = await PlatformBridge.searchDeezerAll(
+            query,
+            trackLimit: 20,
+            artistLimit: 2,
+            filter: currentFilter,
+          );
+          break;
       }
+      _log.i(
+        '$effectiveProvider returned ${(results['tracks'] as List?)?.length ?? 0} tracks, ${(results['artists'] as List?)?.length ?? 0} artists, ${(results['albums'] as List?)?.length ?? 0} albums',
+      );
 
       if (!_isRequestValid(requestId)) {
         _log.w('Search request cancelled (requestId=$requestId)');
@@ -624,32 +734,20 @@ class TrackNotifier extends Notifier<TrackState> {
       final trackList = results['tracks'] as List<dynamic>? ?? [];
       final artistList = results['artists'] as List<dynamic>? ?? [];
       final albumList = results['albums'] as List<dynamic>? ?? [];
+      final trackSearchResults = metadataTrackResults.isNotEmpty
+          ? metadataTrackResults
+          : trackList.whereType<Map<String, dynamic>>().toList();
 
       _log.d(
-        'Raw results: ${trackList.length} tracks, ${artistList.length} artists, ${albumList.length} albums',
+        'Raw results: ${trackSearchResults.length} tracks, ${artistList.length} artists, ${albumList.length} albums',
       );
 
       final tracks = <Track>[];
 
-      tracks.addAll(extensionTracks);
-
-      final existingIsrcs = extensionTracks
-          .where((t) => t.isrc != null && t.isrc!.isNotEmpty)
-          .map((t) => t.isrc!)
-          .toSet();
-
-      for (int i = 0; i < trackList.length; i++) {
-        final t = trackList[i];
+      for (int i = 0; i < trackSearchResults.length; i++) {
+        final t = trackSearchResults[i];
         try {
-          if (t is Map<String, dynamic>) {
-            final track = _parseSearchTrack(t);
-            if (track.isrc != null && existingIsrcs.contains(track.isrc)) {
-              continue;
-            }
-            tracks.add(track);
-          } else {
-            _log.w('Track[$i] is not a Map: ${t.runtimeType}');
-          }
+          tracks.add(_parseSearchTrack(t));
         } catch (e) {
           _log.e('Failed to parse track[$i]: $e', e);
         }
@@ -699,7 +797,7 @@ class TrackNotifier extends Notifier<TrackState> {
       }
 
       _log.i(
-        'Search complete: ${tracks.length} tracks (${extensionTracks.length} from extensions), ${artists.length} artists, ${albums.length} albums, ${playlists.length} playlists parsed successfully',
+        'Search complete: ${tracks.length} tracks, ${artists.length} artists, ${albums.length} albums, ${playlists.length} playlists parsed successfully',
       );
 
       state = TrackState(
@@ -711,6 +809,8 @@ class TrackNotifier extends Notifier<TrackState> {
         hasSearchText: state.hasSearchText,
         isShowingRecentAccess: state.isShowingRecentAccess,
         selectedSearchFilter: currentFilter, // Preserve filter in results
+        searchSource:
+            effectiveProvider, // Track which service was used for search
       );
     } catch (e, stackTrace) {
       if (!_isRequestValid(requestId)) return;
@@ -818,6 +918,7 @@ class TrackNotifier extends Notifier<TrackState> {
         discNumber: track.discNumber,
         releaseDate: track.releaseDate,
         albumType: track.albumType,
+        totalTracks: track.totalTracks,
         source: track.source,
         availability: ServiceAvailability(
           tidal: availability['tidal'] as bool? ?? false,
@@ -885,20 +986,24 @@ class TrackNotifier extends Notifier<TrackState> {
 
   Track _parseTrack(Map<String, dynamic> data) {
     final durationMs = _extractDurationMs(data);
+    final spotifyId = (data['spotify_id'] ?? '').toString();
+    final nativeId = (data['id'] ?? '').toString();
     return Track(
-      id: data['spotify_id'] as String? ?? '',
+      id: spotifyId.isNotEmpty ? spotifyId : nativeId,
       name: data['name'] as String? ?? '',
       artistName: data['artists'] as String? ?? '',
       albumName: data['album_name'] as String? ?? '',
       albumArtist: data['album_artist'] as String?,
       artistId: (data['artist_id'] ?? data['artistId'])?.toString(),
       albumId: data['album_id']?.toString(),
-      coverUrl: data['images'] as String?,
+      coverUrl: normalizeCoverReference(data['images']?.toString()),
       isrc: data['isrc'] as String?,
       duration: (durationMs / 1000).round(),
       trackNumber: data['track_number'] as int?,
       discNumber: data['disc_number'] as int?,
       releaseDate: data['release_date'] as String?,
+      albumType: data['album_type'] as String?,
+      totalTracks: data['total_tracks'] as int?,
     );
   }
 
@@ -906,25 +1011,32 @@ class TrackNotifier extends Notifier<TrackState> {
     final durationMs = _extractDurationMs(data);
 
     final itemType = data['item_type']?.toString();
+    final effectiveSource =
+        source ?? data['source']?.toString() ?? data['provider_id']?.toString();
+    final spotifyId = (data['spotify_id'] ?? '').toString();
+    final nativeId = (data['id'] ?? '').toString();
+    final preferredId = effectiveSource != null && effectiveSource.isNotEmpty
+        ? (nativeId.isNotEmpty ? nativeId : spotifyId)
+        : (spotifyId.isNotEmpty ? spotifyId : nativeId);
 
     return Track(
-      id: (data['spotify_id'] ?? data['id'] ?? '').toString(),
+      id: preferredId,
       name: (data['name'] ?? '').toString(),
       artistName: (data['artists'] ?? data['artist'] ?? '').toString(),
       albumName: (data['album_name'] ?? data['album'] ?? '').toString(),
       albumArtist: data['album_artist']?.toString(),
       artistId: (data['artist_id'] ?? data['artistId'])?.toString(),
       albumId: data['album_id']?.toString(),
-      coverUrl: (data['cover_url'] ?? data['images'])?.toString(),
+      coverUrl: normalizeCoverReference(
+        (data['cover_url'] ?? data['images'])?.toString(),
+      ),
       isrc: data['isrc']?.toString(),
       duration: (durationMs / 1000).round(),
       trackNumber: data['track_number'] as int?,
       discNumber: data['disc_number'] as int?,
       releaseDate: data['release_date']?.toString(),
-      source:
-          source ??
-          data['source']?.toString() ??
-          data['provider_id']?.toString(),
+      totalTracks: data['total_tracks'] as int?,
+      source: effectiveSource,
       albumType: data['album_type']?.toString(),
       itemType: itemType,
     );
@@ -962,7 +1074,9 @@ class TrackNotifier extends Notifier<TrackState> {
       name: data['name'] as String? ?? '',
       releaseDate: data['release_date'] as String? ?? '',
       totalTracks: data['total_tracks'] as int? ?? 0,
-      coverUrl: (data['cover_url'] ?? data['images'])?.toString(),
+      coverUrl: normalizeCoverReference(
+        (data['cover_url'] ?? data['images'])?.toString(),
+      ),
       albumType: data['album_type'] as String? ?? 'album',
       artists: data['artists'] as String? ?? '',
       providerId: data['provider_id']?.toString(),
@@ -973,7 +1087,7 @@ class TrackNotifier extends Notifier<TrackState> {
     return SearchArtist(
       id: data['id'] as String? ?? '',
       name: data['name'] as String? ?? '',
-      imageUrl: data['images'] as String?,
+      imageUrl: normalizeRemoteHttpUrl(data['images']?.toString()),
       followers: data['followers'] as int? ?? 0,
       popularity: data['popularity'] as int? ?? 0,
     );
@@ -984,7 +1098,7 @@ class TrackNotifier extends Notifier<TrackState> {
       id: data['id'] as String? ?? '',
       name: data['name'] as String? ?? '',
       artists: data['artists'] as String? ?? '',
-      imageUrl: data['images'] as String?,
+      imageUrl: normalizeRemoteHttpUrl(data['images']?.toString()),
       releaseDate: data['release_date'] as String?,
       totalTracks: data['total_tracks'] as int? ?? 0,
       albumType: data['album_type'] as String? ?? 'album',
@@ -996,7 +1110,7 @@ class TrackNotifier extends Notifier<TrackState> {
       id: data['id'] as String? ?? '',
       name: data['name'] as String? ?? '',
       owner: data['owner'] as String? ?? '',
-      imageUrl: data['images'] as String?,
+      imageUrl: normalizeRemoteHttpUrl(data['images']?.toString()),
       totalTracks: data['total_tracks'] as int? ?? 0,
     );
   }

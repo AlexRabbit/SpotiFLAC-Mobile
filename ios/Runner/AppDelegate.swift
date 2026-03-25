@@ -160,38 +160,6 @@ import Gobackend  // Import Go framework
             if let error = error { throw error }
             return response
             
-        case "getSpotifyMetadata":
-            let args = call.arguments as! [String: Any]
-            let url = args["url"] as! String
-            let response = GobackendGetSpotifyMetadata(url, &error)
-            if let error = error { throw error }
-            return response
-            
-        case "searchSpotify":
-            let args = call.arguments as! [String: Any]
-            let query = args["query"] as! String
-            let limit = args["limit"] as? Int ?? 10
-            let response = GobackendSearchSpotify(query, Int(limit), &error)
-            if let error = error { throw error }
-            return response
-            
-        case "searchSpotifyAll":
-            let args = call.arguments as! [String: Any]
-            let query = args["query"] as! String
-            let trackLimit = args["track_limit"] as? Int ?? 15
-            let artistLimit = args["artist_limit"] as? Int ?? 3
-            let response = GobackendSearchSpotifyAll(query, Int(trackLimit), Int(artistLimit), &error)
-            if let error = error { throw error }
-            return response
-
-        case "getSpotifyRelatedArtists":
-            let args = call.arguments as! [String: Any]
-            let artistId = args["artist_id"] as! String
-            let limit = args["limit"] as? Int ?? 12
-            let response = GobackendGetSpotifyRelatedArtists(artistId, Int(limit), &error)
-            if let error = error { throw error }
-            return response
-            
         case "checkAvailability":
             let args = call.arguments as! [String: Any]
             let spotifyId = args["spotify_id"] as! String
@@ -399,6 +367,26 @@ import Gobackend  // Import Go framework
             if let error = error { throw error }
             return response
 
+        case "searchTidalAll":
+            let args = call.arguments as! [String: Any]
+            let query = args["query"] as! String
+            let trackLimit = args["track_limit"] as? Int ?? 15
+            let artistLimit = args["artist_limit"] as? Int ?? 3
+            let filter = args["filter"] as? String ?? ""
+            let response = GobackendSearchTidalAll(query, Int(trackLimit), Int(artistLimit), filter, &error)
+            if let error = error { throw error }
+            return response
+
+        case "searchQobuzAll":
+            let args = call.arguments as! [String: Any]
+            let query = args["query"] as! String
+            let trackLimit = args["track_limit"] as? Int ?? 15
+            let artistLimit = args["artist_limit"] as? Int ?? 3
+            let filter = args["filter"] as? String ?? ""
+            let response = GobackendSearchQobuzAll(query, Int(trackLimit), Int(artistLimit), filter, &error)
+            if let error = error { throw error }
+            return response
+
         case "getDeezerRelatedArtists":
             let args = call.arguments as! [String: Any]
             let artistId = args["artist_id"] as! String
@@ -415,10 +403,33 @@ import Gobackend  // Import Go framework
             if let error = error { throw error }
             return response
 
+        case "getQobuzMetadata":
+            let args = call.arguments as! [String: Any]
+            let resourceType = args["resource_type"] as! String
+            let resourceId = args["resource_id"] as! String
+            let response = GobackendGetQobuzMetadata(resourceType, resourceId, &error)
+            if let error = error { throw error }
+            return response
+
+        case "getTidalMetadata":
+            let args = call.arguments as! [String: Any]
+            let resourceType = args["resource_type"] as! String
+            let resourceId = args["resource_id"] as! String
+            let response = GobackendGetTidalMetadata(resourceType, resourceId, &error)
+            if let error = error { throw error }
+            return response
+
         case "parseDeezerUrl":
             let args = call.arguments as! [String: Any]
             let url = args["url"] as! String
             let response = GobackendParseDeezerURLExport(url, &error)
+            if let error = error { throw error }
+            return response
+
+        case "parseQobuzUrl":
+            let args = call.arguments as! [String: Any]
+            let url = args["url"] as! String
+            let response = GobackendParseQobuzURLExport(url, &error)
             if let error = error { throw error }
             return response
 
@@ -509,17 +520,6 @@ import Gobackend  // Import Go framework
         case "clearTrackCache":
             GobackendClearTrackCache()
             return nil
-            
-        case "setSpotifyCredentials":
-            let args = call.arguments as! [String: Any]
-            let clientId = args["client_id"] as! String
-            let clientSecret = args["client_secret"] as! String
-            GobackendSetSpotifyAPICredentials(clientId, clientSecret)
-            return nil
-            
-        case "hasSpotifyCredentials":
-            let hasCredentials = GobackendCheckSpotifyCredentials()
-            return hasCredentials
             
         // Log methods
         case "getLogs":
@@ -641,6 +641,20 @@ import Gobackend  // Import Go framework
             let query = args["query"] as! String
             let limit = args["limit"] as? Int ?? 20
             let response = GobackendSearchTracksWithExtensionsJSON(query, Int(limit), &error)
+            if let error = error { throw error }
+            return response
+
+        case "searchTracksWithMetadataProviders":
+            let args = call.arguments as! [String: Any]
+            let query = args["query"] as! String
+            let limit = args["limit"] as? Int ?? 20
+            let includeExtensions = args["include_extensions"] as? Bool ?? true
+            let response = GobackendSearchTracksWithMetadataProvidersJSON(
+                query,
+                Int(limit),
+                includeExtensions,
+                &error
+            )
             if let error = error { throw error }
             return response
             
@@ -834,6 +848,23 @@ import Gobackend  // Import Go framework
             if let error = error { throw error }
             return nil
             
+        case "setStoreRegistryUrl":
+            let args = call.arguments as! [String: Any]
+            let registryUrl = args["registry_url"] as? String ?? ""
+            GobackendSetStoreRegistryURLJSON(registryUrl, &error)
+            if let error = error { throw error }
+            return nil
+            
+        case "getStoreRegistryUrl":
+            let response = GobackendGetStoreRegistryURLJSON(&error)
+            if let error = error { throw error }
+            return response
+            
+        case "clearStoreRegistryUrl":
+            GobackendClearStoreRegistryURLJSON(&error)
+            if let error = error { throw error }
+            return nil
+            
         case "getStoreExtensions":
             let args = call.arguments as! [String: Any]
             let forceRefresh = args["force_refresh"] as? Bool ?? false
@@ -966,6 +997,15 @@ import Gobackend  // Import Go framework
             
         case "getLyricsFetchOptions":
             let response = GobackendGetLyricsFetchOptionsJSON(&error)
+            if let error = error { throw error }
+            return response
+            
+        // CUE Sheet Parsing
+        case "parseCueSheet":
+            let args = call.arguments as! [String: Any]
+            let cuePath = args["cue_path"] as! String
+            let audioDir = args["audio_dir"] as? String ?? ""
+            let response = GobackendParseCueSheet(cuePath, audioDir, &error)
             if let error = error { throw error }
             return response
             

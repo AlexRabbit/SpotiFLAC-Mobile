@@ -130,6 +130,25 @@ class FFmpegService {
     }
   }
 
+  static Future<FFmpegResult> _executeWithArguments(
+    List<String> arguments,
+  ) async {
+    try {
+      final session = await FFmpegKit.executeWithArguments(arguments);
+      final returnCode = await session.getReturnCode();
+      final output = await session.getOutput() ?? '';
+
+      return FFmpegResult(
+        success: ReturnCode.isSuccess(returnCode),
+        returnCode: returnCode?.getValue() ?? -1,
+        output: output,
+      );
+    } catch (e) {
+      _log.e('FFmpeg executeWithArguments error: $e');
+      return FFmpegResult(success: false, returnCode: -1, output: e.toString());
+    }
+  }
+
   static Future<String?> convertM4aToFlac(String inputPath) async {
     final outputPath = _buildOutputPath(inputPath, '.flac');
 
@@ -1030,18 +1049,24 @@ class FFmpegService {
   }) async {
     final tempDir = await getTemporaryDirectory();
     final tempOutput = _nextTempEmbedPath(tempDir.path, '.opus');
-
-    final StringBuffer cmdBuffer = StringBuffer();
-    cmdBuffer.write('-i "$opusPath" ');
-    cmdBuffer.write('-map 0:a ');
-    cmdBuffer.write('-map_metadata -1 ');
-    cmdBuffer.write('-map_metadata:s:a -1 ');
-    cmdBuffer.write('-c:a copy ');
+    final arguments = <String>[
+      '-i',
+      opusPath,
+      '-map',
+      '0:a',
+      '-map_metadata',
+      '-1',
+      '-map_metadata:s:a',
+      '-1',
+      '-c:a',
+      'copy',
+    ];
 
     if (metadata != null) {
       metadata.forEach((key, value) {
-        final sanitizedValue = value.replaceAll('"', '\\"');
-        cmdBuffer.write('-metadata $key="$sanitizedValue" ');
+        arguments
+          ..add('-metadata')
+          ..add('$key=$value');
       });
     }
 
@@ -1049,8 +1074,9 @@ class FFmpegService {
       try {
         final pictureBlock = await _createMetadataBlockPicture(coverPath);
         if (pictureBlock != null) {
-          final escapedBlock = pictureBlock.replaceAll('"', '\\"');
-          cmdBuffer.write('-metadata METADATA_BLOCK_PICTURE="$escapedBlock" ');
+          arguments
+            ..add('-metadata')
+            ..add('METADATA_BLOCK_PICTURE=$pictureBlock');
           _log.d(
             'Created METADATA_BLOCK_PICTURE for Opus (${pictureBlock.length} chars)',
           );
@@ -1062,12 +1088,12 @@ class FFmpegService {
       }
     }
 
-    cmdBuffer.write('"$tempOutput" -y');
-
-    final command = cmdBuffer.toString();
+    arguments
+      ..add(tempOutput)
+      ..add('-y');
     _log.d('Executing FFmpeg Opus embed command');
 
-    final result = await _execute(command);
+    final result = await _executeWithArguments(arguments);
 
     if (result.success) {
       try {
@@ -1103,6 +1129,88 @@ class FFmpegService {
     }
 
     _log.e('Opus Metadata embed failed: ${result.output}');
+    return null;
+  }
+
+  static Future<String?> embedMetadataToM4a({
+    required String m4aPath,
+    String? coverPath,
+    Map<String, String>? metadata,
+  }) async {
+    final tempDir = await getTemporaryDirectory();
+    final tempOutput = _nextTempEmbedPath(tempDir.path, '.m4a');
+
+    final cmdBuffer = StringBuffer();
+    cmdBuffer.write('-i "$m4aPath" ');
+
+    final hasCover = coverPath != null && await File(coverPath).exists();
+    if (hasCover) {
+      cmdBuffer.write('-i "$coverPath" ');
+    }
+
+    cmdBuffer.write('-map 0:a ');
+    cmdBuffer.write('-map_metadata -1 ');
+
+    // For M4A/MP4, cover art is mapped as a video stream and stored in the
+    // 'covr' atom automatically by FFmpeg. The '-disposition attached_pic'
+    // flag is only valid for Matroska/WebM containers and must NOT be used here.
+    if (hasCover) {
+      cmdBuffer.write('-map 1:v -c:v copy ');
+    }
+
+    cmdBuffer.write('-c:a copy ');
+
+    if (metadata != null) {
+      final m4aMetadata = _convertToM4aTags(metadata);
+      for (final entry in m4aMetadata.entries) {
+        final sanitizedValue = entry.value.replaceAll('"', '\\"');
+        cmdBuffer.write('-metadata ${entry.key}="$sanitizedValue" ');
+      }
+    }
+
+    cmdBuffer.write('"$tempOutput" -y');
+
+    final command = cmdBuffer.toString();
+    _log.d(
+      'Executing FFmpeg M4A embed command: ${_previewCommandForLog(command)}',
+    );
+
+    final result = await _execute(command);
+
+    if (result.success) {
+      try {
+        final tempFile = File(tempOutput);
+        final originalFile = File(m4aPath);
+
+        if (await tempFile.exists()) {
+          if (await originalFile.exists()) {
+            await originalFile.delete();
+          }
+          await tempFile.copy(m4aPath);
+          await tempFile.delete();
+
+          _log.d('M4A metadata embedded successfully');
+          return m4aPath;
+        } else {
+          _log.e('Temp M4A output file not found: $tempOutput');
+          return null;
+        }
+      } catch (e) {
+        _log.e('Failed to replace M4A file after metadata embed: $e');
+        return null;
+      }
+    }
+
+    try {
+      final tempFile = File(tempOutput);
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+    } catch (e) {
+      _log.w('Failed to cleanup temp M4A file: $e');
+    }
+
+    _log.e('M4A Metadata embed failed: ${result.output}');
     return null;
   }
 
@@ -1209,7 +1317,8 @@ class FFmpegService {
   }
 
   /// Unified audio format conversion with full metadata + cover preservation.
-  /// Supports: FLAC/MP3/Opus -> MP3/Opus (any direction except same format).
+  /// Supports: FLAC/M4A/MP3/Opus -> MP3/Opus/ALAC/FLAC.
+  /// ALAC and FLAC targets are lossless (bitrate parameter is ignored).
   /// Returns the new file path on success, null on failure.
   static Future<String?> convertAudioFormat({
     required String inputPath,
@@ -1220,11 +1329,30 @@ class FFmpegService {
     bool deleteOriginal = true,
   }) async {
     final format = targetFormat.toLowerCase();
-    if (format != 'mp3' && format != 'opus') {
+    if (!const {'mp3', 'opus', 'alac', 'flac'}.contains(format)) {
       _log.e('Unsupported target format: $targetFormat');
       return null;
     }
 
+    // Lossless targets: dedicated single-pass methods
+    if (format == 'alac') {
+      return _convertToAlac(
+        inputPath: inputPath,
+        metadata: metadata,
+        coverPath: coverPath,
+        deleteOriginal: deleteOriginal,
+      );
+    }
+    if (format == 'flac') {
+      return _convertToFlac(
+        inputPath: inputPath,
+        metadata: metadata,
+        coverPath: coverPath,
+        deleteOriginal: deleteOriginal,
+      );
+    }
+
+    // Lossy targets: MP3 / Opus
     final extension = format == 'opus' ? '.opus' : '.mp3';
     final outputPath = _buildOutputPath(inputPath, extension);
 
@@ -1296,6 +1424,266 @@ class FFmpegService {
     return outputPath;
   }
 
+  /// Convert any audio format to ALAC (Apple Lossless) in an M4A container.
+  /// Metadata and cover art are embedded in a single FFmpeg pass.
+  static Future<String?> _convertToAlac({
+    required String inputPath,
+    required Map<String, String> metadata,
+    String? coverPath,
+    bool deleteOriginal = true,
+  }) async {
+    final outputPath = _buildOutputPath(inputPath, '.m4a');
+
+    final cmdBuffer = StringBuffer();
+    cmdBuffer.write('-i "$inputPath" ');
+
+    // Cover art as second input for M4A attached picture
+    final hasCover =
+        coverPath != null &&
+        coverPath.trim().isNotEmpty &&
+        await File(coverPath).exists();
+    if (hasCover) {
+      cmdBuffer.write('-i "$coverPath" ');
+    }
+
+    cmdBuffer.write('-map 0:a ');
+    // M4A/MP4 containers store cover art in the 'covr' atom automatically.
+    // '-disposition attached_pic' is only for Matroska/WebM and must NOT be used here.
+    if (hasCover) {
+      cmdBuffer.write('-map 1:v -c:v copy ');
+    }
+    cmdBuffer.write('-c:a alac ');
+    cmdBuffer.write('-map_metadata -1 ');
+
+    // Embed M4A metadata tags
+    final m4aTags = _convertToM4aTags(metadata);
+    for (final entry in m4aTags.entries) {
+      final sanitized = entry.value.replaceAll('"', '\\"');
+      cmdBuffer.write('-metadata ${entry.key}="$sanitized" ');
+    }
+
+    cmdBuffer.write('"$outputPath" -y');
+
+    _log.i(
+      'Converting ${inputPath.split(Platform.pathSeparator).last} to ALAC',
+    );
+    final result = await _execute(cmdBuffer.toString());
+
+    if (!result.success) {
+      _log.e('ALAC conversion failed: ${result.output}');
+      return null;
+    }
+
+    if (deleteOriginal) {
+      try {
+        await File(inputPath).delete();
+        _log.i(
+          'Deleted original: ${inputPath.split(Platform.pathSeparator).last}',
+        );
+      } catch (e) {
+        _log.w('Failed to delete original: $e');
+      }
+    }
+
+    return outputPath;
+  }
+
+  /// Convert any audio format to FLAC with metadata and cover art preservation.
+  static Future<String?> _convertToFlac({
+    required String inputPath,
+    required Map<String, String> metadata,
+    String? coverPath,
+    bool deleteOriginal = true,
+  }) async {
+    final outputPath = _buildOutputPath(inputPath, '.flac');
+
+    final cmdBuffer = StringBuffer();
+    cmdBuffer.write('-i "$inputPath" ');
+
+    final hasCover =
+        coverPath != null &&
+        coverPath.trim().isNotEmpty &&
+        await File(coverPath).exists();
+    if (hasCover) {
+      cmdBuffer.write('-i "$coverPath" ');
+    }
+
+    cmdBuffer.write('-map 0:a ');
+    if (hasCover) {
+      cmdBuffer.write('-map 1:v -c:v copy -disposition:v:0 attached_pic ');
+      cmdBuffer.write('-metadata:s:v title="Album cover" ');
+      cmdBuffer.write('-metadata:s:v comment="Cover (front)" ');
+    }
+    cmdBuffer.write('-c:a flac -compression_level 8 ');
+    cmdBuffer.write('-map_metadata 0 ');
+
+    final vorbisComments = _normalizeToVorbisComments(metadata);
+    for (final entry in vorbisComments.entries) {
+      final sanitized = entry.value.replaceAll('"', '\\"');
+      cmdBuffer.write('-metadata ${entry.key}="$sanitized" ');
+    }
+
+    cmdBuffer.write('"$outputPath" -y');
+
+    _log.i(
+      'Converting ${inputPath.split(Platform.pathSeparator).last} to FLAC',
+    );
+    final result = await _execute(cmdBuffer.toString());
+
+    if (!result.success) {
+      _log.e('FLAC conversion failed: ${result.output}');
+      return null;
+    }
+
+    if (deleteOriginal) {
+      try {
+        await File(inputPath).delete();
+        _log.i(
+          'Deleted original: ${inputPath.split(Platform.pathSeparator).last}',
+        );
+      } catch (e) {
+        _log.w('Failed to delete original: $e');
+      }
+    }
+
+    return outputPath;
+  }
+
+  /// Normalize metadata keys to standard Vorbis comment names, filtering out
+  /// technical fields (bit_depth, sample_rate, duration, etc.).
+  static Map<String, String> _normalizeToVorbisComments(
+    Map<String, String> metadata,
+  ) {
+    final vorbis = <String, String>{};
+
+    for (final entry in metadata.entries) {
+      final key = entry.key.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+      final value = entry.value;
+      if (value.trim().isEmpty) continue;
+
+      switch (key) {
+        case 'TITLE':
+          vorbis['TITLE'] = value;
+          break;
+        case 'ARTIST':
+          vorbis['ARTIST'] = value;
+          break;
+        case 'ALBUM':
+          vorbis['ALBUM'] = value;
+          break;
+        case 'ALBUMARTIST':
+          vorbis['ALBUMARTIST'] = value;
+          break;
+        case 'TRACKNUMBER':
+        case 'TRACKNBR':
+        case 'TRACK':
+        case 'TRCK':
+          if (value != '0') vorbis['TRACKNUMBER'] = value;
+          break;
+        case 'DISCNUMBER':
+        case 'DISC':
+        case 'TPOS':
+          if (value != '0') vorbis['DISCNUMBER'] = value;
+          break;
+        case 'DATE':
+        case 'YEAR':
+          vorbis['DATE'] = value;
+          break;
+        case 'GENRE':
+          vorbis['GENRE'] = value;
+          break;
+        case 'ISRC':
+          vorbis['ISRC'] = value;
+          break;
+        case 'LABEL':
+        case 'ORGANIZATION':
+          vorbis['ORGANIZATION'] = value;
+          break;
+        case 'COPYRIGHT':
+          vorbis['COPYRIGHT'] = value;
+          break;
+        case 'COMPOSER':
+          vorbis['COMPOSER'] = value;
+          break;
+        case 'COMMENT':
+          vorbis['COMMENT'] = value;
+          break;
+        case 'LYRICS':
+        case 'UNSYNCEDLYRICS':
+          vorbis['LYRICS'] = value;
+          vorbis['UNSYNCEDLYRICS'] = value;
+          break;
+      }
+    }
+
+    return vorbis;
+  }
+
+  /// Map Vorbis comment keys to M4A/MP4 metadata tag names for FFmpeg.
+  static Map<String, String> _convertToM4aTags(Map<String, String> metadata) {
+    final m4aMap = <String, String>{};
+
+    for (final entry in metadata.entries) {
+      final key = entry.key.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+      final value = entry.value;
+      if (value.trim().isEmpty) continue;
+
+      switch (key) {
+        case 'TITLE':
+          m4aMap['title'] = value;
+          break;
+        case 'ARTIST':
+          m4aMap['artist'] = value;
+          break;
+        case 'ALBUM':
+          m4aMap['album'] = value;
+          break;
+        case 'ALBUMARTIST':
+          m4aMap['album_artist'] = value;
+          break;
+        case 'TRACKNUMBER':
+        case 'TRACK':
+        case 'TRCK':
+          m4aMap['track'] = value;
+          break;
+        case 'DISCNUMBER':
+        case 'DISC':
+        case 'TPOS':
+          m4aMap['disc'] = value;
+          break;
+        case 'DATE':
+        case 'YEAR':
+          m4aMap['date'] = value;
+          break;
+        case 'GENRE':
+          m4aMap['genre'] = value;
+          break;
+        case 'ISRC':
+          m4aMap['isrc'] = value;
+          break;
+        case 'COMPOSER':
+          m4aMap['composer'] = value;
+          break;
+        case 'COMMENT':
+          m4aMap['comment'] = value;
+          break;
+        case 'COPYRIGHT':
+          m4aMap['copyright'] = value;
+          break;
+        case 'LABEL':
+        case 'ORGANIZATION':
+          m4aMap['organization'] = value;
+          break;
+        case 'LYRICS':
+        case 'UNSYNCEDLYRICS':
+          m4aMap['lyrics'] = value;
+          break;
+      }
+    }
+
+    return m4aMap;
+  }
+
   static Map<String, String> _convertToId3Tags(
     Map<String, String> vorbisMetadata,
   ) {
@@ -1352,6 +1740,164 @@ class FFmpegService {
     }
 
     return id3Map;
+  }
+
+  /// Split a CUE+audio file into individual track files using FFmpeg.
+  /// Each track is extracted with `-c copy` (no re-encoding) and metadata is embedded.
+  /// [audioPath] is the source audio file (FLAC, WAV, etc.)
+  /// [outputDir] is where individual track files will be saved
+  /// [tracks] is the list of track split info from the Go CUE parser
+  /// [albumMetadata] contains album-level metadata (artist, album, genre, date)
+  /// Returns list of output file paths on success, null on failure.
+  static Future<List<String>?> splitCueToTracks({
+    required String audioPath,
+    required String outputDir,
+    required List<CueSplitTrackInfo> tracks,
+    required Map<String, String> albumMetadata,
+    String? coverPath,
+    void Function(int current, int total)? onProgress,
+  }) async {
+    if (tracks.isEmpty) {
+      _log.e('No tracks to split');
+      return null;
+    }
+
+    final outputPaths = <String>[];
+    final inputExt = audioPath.toLowerCase().split('.').last;
+    // For lossless formats, keep as FLAC; for others, keep original format
+    final outputExt =
+        (inputExt == 'flac' ||
+            inputExt == 'wav' ||
+            inputExt == 'ape' ||
+            inputExt == 'wv')
+        ? 'flac'
+        : inputExt;
+
+    for (var i = 0; i < tracks.length; i++) {
+      final track = tracks[i];
+      onProgress?.call(i + 1, tracks.length);
+
+      final sanitizedTitle = track.title
+          .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      final trackNumStr = track.number.toString().padLeft(2, '0');
+      final outputFileName = '$trackNumStr - $sanitizedTitle.$outputExt';
+      final outputPath = '$outputDir${Platform.pathSeparator}$outputFileName';
+
+      final StringBuffer cmdBuffer = StringBuffer();
+      cmdBuffer.write('-i "$audioPath" ');
+
+      final startTime = _formatSecondsForFFmpeg(track.startSec);
+      cmdBuffer.write('-ss $startTime ');
+
+      if (track.endSec > 0) {
+        final endTime = _formatSecondsForFFmpeg(track.endSec);
+        cmdBuffer.write('-to $endTime ');
+      }
+
+      if (outputExt == 'flac') {
+        cmdBuffer.write('-c:a flac -compression_level 8 ');
+      } else {
+        cmdBuffer.write('-c:a copy ');
+      }
+
+      final artist = track.artist.isNotEmpty
+          ? track.artist
+          : (albumMetadata['artist'] ?? '');
+      final album = albumMetadata['album'] ?? '';
+      final genre = albumMetadata['genre'] ?? '';
+      final date = albumMetadata['date'] ?? '';
+
+      void addMeta(String key, String value) {
+        if (value.isNotEmpty) {
+          final sanitized = value.replaceAll('"', '\\"');
+          cmdBuffer.write('-metadata $key="$sanitized" ');
+        }
+      }
+
+      addMeta('TITLE', track.title);
+      addMeta('ARTIST', artist);
+      addMeta('ALBUM', album);
+      addMeta('ALBUMARTIST', albumMetadata['artist'] ?? '');
+      addMeta('TRACKNUMBER', track.number.toString());
+      addMeta('GENRE', genre);
+      addMeta('DATE', date);
+      if (track.isrc.isNotEmpty) addMeta('ISRC', track.isrc);
+      if (track.composer.isNotEmpty) addMeta('COMPOSER', track.composer);
+
+      cmdBuffer.write('"$outputPath" -y');
+
+      final command = cmdBuffer.toString();
+      _log.d(
+        'CUE split track ${track.number}: ${_previewCommandForLog(command)}',
+      );
+
+      final result = await _execute(command);
+      if (!result.success) {
+        _log.e('CUE split failed for track ${track.number}: ${result.output}');
+        // Continue with remaining tracks instead of failing completely
+        continue;
+      }
+
+      // Embed cover art if available (for FLAC output)
+      if (coverPath != null && coverPath.isNotEmpty && outputExt == 'flac') {
+        // Use the Go backend for FLAC cover embedding via PlatformBridge
+        // (handled by the caller)
+      }
+
+      outputPaths.add(outputPath);
+      _log.i('CUE split: track ${track.number} -> $outputFileName');
+    }
+
+    if (outputPaths.isEmpty) {
+      _log.e('CUE split: no tracks were successfully extracted');
+      return null;
+    }
+
+    _log.i('CUE split complete: ${outputPaths.length}/${tracks.length} tracks');
+    return outputPaths;
+  }
+
+  static String _formatSecondsForFFmpeg(double seconds) {
+    if (seconds < 0) return '0';
+    final hours = seconds ~/ 3600;
+    final mins = (seconds % 3600) ~/ 60;
+    final secs = seconds - (hours * 3600) - (mins * 60);
+    return '${hours.toString().padLeft(2, '0')}:${mins.toInt().toString().padLeft(2, '0')}:${secs.toStringAsFixed(3).padLeft(6, '0')}';
+  }
+}
+
+/// Track info for CUE splitting, passed from the CUE parser
+class CueSplitTrackInfo {
+  final int number;
+  final String title;
+  final String artist;
+  final String isrc;
+  final String composer;
+  final double startSec;
+  final double endSec;
+
+  CueSplitTrackInfo({
+    required this.number,
+    required this.title,
+    required this.artist,
+    this.isrc = '',
+    this.composer = '',
+    required this.startSec,
+    required this.endSec,
+  });
+
+  factory CueSplitTrackInfo.fromJson(Map<String, dynamic> json) {
+    return CueSplitTrackInfo(
+      number: json['number'] as int? ?? 0,
+      title: json['title'] as String? ?? '',
+      artist: json['artist'] as String? ?? '',
+      isrc: json['isrc'] as String? ?? '',
+      composer: json['composer'] as String? ?? '',
+      startSec: (json['start_sec'] as num?)?.toDouble() ?? 0.0,
+      endSec: (json['end_sec'] as num?)?.toDouble() ?? -1.0,
+    );
   }
 }
 

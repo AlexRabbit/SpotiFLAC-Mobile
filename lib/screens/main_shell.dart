@@ -33,7 +33,7 @@ class MainShell extends ConsumerStatefulWidget {
 
 class _MainShellState extends ConsumerState<MainShell> {
   int _currentIndex = 0;
-  late PageController _pageController;
+  late final PageController _pageController;
   bool _hasCheckedUpdate = false;
   StreamSubscription<String>? _shareSubscription;
   DateTime? _lastBackPress;
@@ -83,7 +83,6 @@ class _MainShellState extends ConsumerState<MainShell> {
     final extState = ref.read(extensionProvider);
     if (!extState.isInitialized) {
       _log.d('Waiting for extensions to initialize before handling URL...');
-      // Wait up to 5 seconds for extensions to initialize
       for (int i = 0; i < 50; i++) {
         await Future.delayed(const Duration(milliseconds: 100));
         if (!mounted) return;
@@ -102,12 +101,29 @@ class _MainShellState extends ConsumerState<MainShell> {
     if (_currentIndex != 0) {
       _onNavTap(0);
     }
-    ref.read(trackProvider.notifier).fetchFromUrl(url);
     ref.read(settingsProvider.notifier).setHasSearchedBefore();
     if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(context.l10n.loadingSharedLink)));
+    }
+    await ref.read(trackProvider.notifier).fetchFromUrl(url);
+    final trackState = ref.read(trackProvider);
+    if (trackState.error != null && mounted) {
+      final l10n = context.l10n;
+      final errorMsg = trackState.error!;
+      final isRateLimit =
+          errorMsg.contains('429') ||
+          errorMsg.toLowerCase().contains('rate limit') ||
+          errorMsg.toLowerCase().contains('too many requests');
+      final displayMessage = errorMsg == 'url_not_recognized'
+          ? l10n.errorUrlNotRecognizedMessage
+          : isRateLimit
+          ? l10n.errorRateLimitedMessage
+          : l10n.errorUrlFetchFailed;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(displayMessage)));
     }
   }
 
@@ -142,12 +158,10 @@ class _MainShellState extends ConsumerState<MainShell> {
     if (settings.storageMode == 'saf') return;
     if (settings.downloadDirectory.isEmpty) return;
 
-    // Check Android version
     final deviceInfo = DeviceInfoPlugin();
     final androidInfo = await deviceInfo.androidInfo;
     if (androidInfo.version.sdkInt < 29) return;
 
-    // Only show once
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_safMigrationShownKey) == true) return;
     await prefs.setBool(_safMigrationShownKey, true);
@@ -165,25 +179,20 @@ class _MainShellState extends ConsumerState<MainShell> {
           size: 32,
           color: colorScheme.primary,
         ),
-        title: const Text('Storage Update Required'),
-        content: const Column(
+        title: Text(context.l10n.safMigrationTitle),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'SpotiFLAC now uses Android Storage Access Framework (SAF) for downloads. '
-              'This fixes "permission denied" errors on Android 10+.',
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Please select your download folder again to switch to the new storage system.',
-            ),
+            Text(context.l10n.safMigrationMessage1),
+            const SizedBox(height: 12),
+            Text(context.l10n.safMigrationMessage2),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Later'),
+            child: Text(context.l10n.updateLater),
           ),
           FilledButton(
             onPressed: () async {
@@ -203,15 +212,13 @@ class _MainShellState extends ConsumerState<MainShell> {
                       );
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Download folder updated to SAF mode'),
-                      ),
+                      SnackBar(content: Text(context.l10n.safMigrationSuccess)),
                     );
                   }
                 }
               }
             },
-            child: const Text('Select Folder'),
+            child: Text(context.l10n.setupSelectFolder),
           ),
         ],
       ),
@@ -244,6 +251,7 @@ class _MainShellState extends ConsumerState<MainShell> {
     }
 
     if (_currentIndex != index) {
+      final shouldResetHome = index == 0;
       HapticFeedback.selectionClick();
       setState(() => _currentIndex = index);
       final showStore = ref.read(
@@ -253,6 +261,10 @@ class _MainShellState extends ConsumerState<MainShell> {
         currentTabIndex: _currentIndex,
         showStoreTab: showStore,
       );
+      FocusManager.instance.primaryFocus?.unfocus();
+      if (shouldResetHome) {
+        _resetHomeToMain();
+      }
       _pageController.animateToPage(
         index,
         duration: const Duration(milliseconds: 250),
@@ -492,11 +504,15 @@ class _MainShellState extends ConsumerState<MainShell> {
         return true;
       },
       child: Scaffold(
-        body: PageView(
+        body: PageView.builder(
           controller: _pageController,
+          itemCount: tabs.length,
           onPageChanged: _onPageChanged,
           physics: const NeverScrollableScrollPhysics(),
-          children: tabs,
+          itemBuilder: (context, index) => _KeepAliveTabPage(
+            key: ValueKey('page-$index'),
+            child: tabs[index],
+          ),
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _currentIndex.clamp(0, maxIndex),
@@ -554,6 +570,27 @@ class _LibraryTabRoot extends ConsumerWidget {
       parentPageIndex: 1,
       nextPageIndex: showStore ? 2 : 3,
     );
+  }
+}
+
+class _KeepAliveTabPage extends StatefulWidget {
+  final Widget child;
+
+  const _KeepAliveTabPage({super.key, required this.child});
+
+  @override
+  State<_KeepAliveTabPage> createState() => _KeepAliveTabPageState();
+}
+
+class _KeepAliveTabPageState extends State<_KeepAliveTabPage>
+    with AutomaticKeepAliveClientMixin<_KeepAliveTabPage> {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 

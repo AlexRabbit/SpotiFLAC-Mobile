@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type YouTubeDownloader struct {
@@ -30,6 +29,7 @@ var (
 type YouTubeQuality string
 
 const (
+	YouTubeQualityOpus320 YouTubeQuality = "opus_320"
 	YouTubeQualityOpus256 YouTubeQuality = "opus_256"
 	YouTubeQualityOpus128 YouTubeQuality = "opus_128"
 	YouTubeQualityMP3128  YouTubeQuality = "mp3_128"
@@ -38,7 +38,7 @@ const (
 )
 
 var (
-	youtubeOpusSupportedBitrates = []int{128, 256}
+	youtubeOpusSupportedBitrates = []int{128, 256, 320}
 	youtubeMp3SupportedBitrates  = []int{128, 256, 320}
 )
 
@@ -82,7 +82,7 @@ type YouTubeDownloadResult struct {
 func NewYouTubeDownloader() *YouTubeDownloader {
 	youtubeDownloaderOnce.Do(func() {
 		globalYouTubeDownloader = &YouTubeDownloader{
-			client: NewHTTPClientWithTimeout(120 * time.Second),
+			client: NewHTTPClientWithTimeout(DownloadTimeout),
 			apiURL: "https://api.qwkuns.me",
 		}
 	})
@@ -147,6 +147,8 @@ func parseYouTubeQualityInput(raw string) (format string, bitrate int, normalize
 	switch normalizedRaw {
 	case "opus_256", "opus256", "opus":
 		return "opus", 256, YouTubeQualityOpus256
+	case "opus_320", "opus320":
+		return "opus", 320, YouTubeQualityOpus320
 	case "opus_128", "opus128":
 		return "opus", 128, YouTubeQualityOpus128
 	case "mp3_320", "mp3320", "mp3", "":
@@ -511,12 +513,10 @@ func ExtractYouTubeVideoID(urlStr string) (string, error) {
 		return "", fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// /watch?v=
 	if v := parsed.Query().Get("v"); v != "" {
 		return v, nil
 	}
 
-	// /embed/
 	if strings.Contains(parsed.Path, "/embed/") {
 		parts := strings.Split(parsed.Path, "/embed/")
 		if len(parts) >= 2 {
@@ -524,7 +524,6 @@ func ExtractYouTubeVideoID(urlStr string) (string, error) {
 		}
 	}
 
-	// /v/
 	if strings.Contains(parsed.Path, "/v/") {
 		parts := strings.Split(parsed.Path, "/v/")
 		if len(parts) >= 2 {

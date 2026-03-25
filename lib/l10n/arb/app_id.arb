@@ -897,15 +897,15 @@
   "@errorNoTracksFound": {
     "description": "Error - search returned no results"
   },
-  "errorUrlNotRecognized": "Tautan tidak dikenali",
+  "errorUrlNotRecognized": "Link tidak dikenali",
   "@errorUrlNotRecognized": {
     "description": "Error title - URL not handled by any extension or service"
   },
-  "errorUrlNotRecognizedMessage": "Tautan ini tidak didukung. Pastikan URL sudah benar dan ekstensi yang kompatibel telah terpasang.",
+  "errorUrlNotRecognizedMessage": "Link ini tidak didukung. Pastikan URL benar dan ekstensi yang kompatibel sudah terpasang.",
   "@errorUrlNotRecognizedMessage": {
     "description": "Error message - URL not recognized explanation"
   },
-  "errorUrlFetchFailed": "Konten dari tautan ini gagal dimuat. Silakan coba lagi.",
+  "errorUrlFetchFailed": "Gagal memuat konten dari link ini. Silakan coba lagi.",
   "@errorUrlFetchFailed": {
     "description": "Error message - generic URL fetch failure"
   },
@@ -1804,6 +1804,22 @@
   "downloadUseAlbumArtistForFolders": "Gunakan Artis Album untuk folder",
   "@downloadUseAlbumArtistForFolders": {
     "description": "Setting - choose whether artist folders use Album Artist or Track Artist"
+  },
+  "downloadCreatePlaylistSourceFolder": "Buat folder sumber playlist",
+  "@downloadCreatePlaylistSourceFolder": {
+    "description": "Setting title for adding a playlist folder prefix before the normal organization structure"
+  },
+  "downloadCreatePlaylistSourceFolderEnabled": "Unduhan dari playlist memakai Playlist/ lalu struktur folder normal Anda.",
+  "@downloadCreatePlaylistSourceFolderEnabled": {
+    "description": "Subtitle when playlist source folder prefix is enabled"
+  },
+  "downloadCreatePlaylistSourceFolderDisabled": "Unduhan dari playlist hanya memakai struktur folder normal.",
+  "@downloadCreatePlaylistSourceFolderDisabled": {
+    "description": "Subtitle when playlist source folder prefix is disabled"
+  },
+  "downloadCreatePlaylistSourceFolderRedundant": "Mode Berdasarkan Playlist sudah menaruh unduhan ke dalam folder playlist.",
+  "@downloadCreatePlaylistSourceFolderRedundant": {
+    "description": "Subtitle when playlist folder prefix setting is redundant because folder organization is already by playlist"
   },
   "downloadUsePrimaryArtistOnly": "Hanya artis utama untuk folder",
   "@downloadUsePrimaryArtistOnly": {
@@ -2763,6 +2779,47 @@
   "@trackReEnrichFfmpegFailed": {
     "description": "Snackbar when FFmpeg embed fails for MP3/Opus"
   },
+  "queueFlacAction": "Antrekan FLAC",
+  "@queueFlacAction": {
+    "description": "Action/button label for queueing FLAC redownloads for local tracks"
+  },
+  "queueFlacConfirmMessage": "Cari kecocokan online untuk track yang dipilih lalu antrekan download FLAC.\n\nFile yang sudah ada tidak akan diubah atau dihapus.\n\nHanya kecocokan dengan keyakinan tinggi yang akan diantrikan otomatis.\n\n{count} dipilih",
+  "@queueFlacConfirmMessage": {
+    "description": "Confirmation dialog body before queueing FLAC redownloads for local tracks",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "queueFlacFindingProgress": "Mencari kecocokan FLAC... ({current}/{total})",
+  "@queueFlacFindingProgress": {
+    "description": "Snackbar while resolving remote matches for local FLAC redownloads",
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "queueFlacNoReliableMatches": "Tidak ada kecocokan online yang cukup meyakinkan untuk pilihan ini",
+  "@queueFlacNoReliableMatches": {
+    "description": "Snackbar when no safe FLAC redownload matches were found"
+  },
+  "queueFlacQueuedWithSkipped": "Menambahkan {addedCount} track ke antrean, melewati {skippedCount}",
+  "@queueFlacQueuedWithSkipped": {
+    "description": "Snackbar when some selected local tracks were queued for FLAC redownload and some were skipped",
+    "placeholders": {
+      "addedCount": {
+        "type": "int"
+      },
+      "skippedCount": {
+        "type": "int"
+      }
+    }
+  },
   "trackSaveFailed": "Failed: {error}",
   "@trackSaveFailed": {
     "description": "Snackbar when save operation fails",
@@ -2776,7 +2833,7 @@
   "@trackConvertFormat": {
     "description": "Menu item - convert audio format"
   },
-  "trackConvertFormatSubtitle": "Convert to MP3 or Opus",
+  "trackConvertFormatSubtitle": "Konversi ke MP3, Opus, ALAC, atau FLAC",
   "@trackConvertFormatSubtitle": {
     "description": "Subtitle for convert format menu item"
   },
@@ -2810,6 +2867,22 @@
         "type": "String"
       }
     }
+  },
+  "trackConvertConfirmMessageLossless": "Konversi dari {sourceFormat} ke {targetFormat}? (Lossless — tanpa kehilangan kualitas)\n\nFile asli akan dihapus setelah konversi.",
+  "@trackConvertConfirmMessageLossless": {
+    "description": "Confirmation dialog message for lossless-to-lossless conversion",
+    "placeholders": {
+      "sourceFormat": {
+        "type": "String"
+      },
+      "targetFormat": {
+        "type": "String"
+      }
+    }
+  },
+  "trackConvertLosslessHint": "Konversi lossless — tanpa kehilangan kualitas",
+  "@trackConvertLosslessHint": {
+    "description": "Hint shown when converting between lossless formats"
   },
   "trackConvertConverting": "Converting audio...",
   "@trackConvertConverting": {

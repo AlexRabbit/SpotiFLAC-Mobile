@@ -9,10 +9,11 @@ import 'package:spotiflac_android/services/library_database.dart';
 import 'package:spotiflac_android/services/notification_service.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
 import 'package:spotiflac_android/utils/logger.dart';
+import 'package:spotiflac_android/utils/local_library_scan_prefs.dart';
+import 'package:spotiflac_android/utils/path_match_keys.dart';
 
 final _log = AppLogger('LocalLibrary');
 
-const _lastScannedAtKey = 'local_library_last_scanned_at';
 const _excludedDownloadedCountKey = 'local_library_excluded_downloaded_count';
 final _prefs = SharedPreferences.getInstance();
 
@@ -119,7 +120,7 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
   final LibraryDatabase _db = LibraryDatabase.instance;
   final HistoryDatabase _historyDb = HistoryDatabase.instance;
   final NotificationService _notificationService = NotificationService();
-  static const _progressPollingInterval = Duration(milliseconds: 800);
+  static const _progressPollingInterval = Duration(milliseconds: 1200);
   Timer? _progressTimer;
   Timer? _progressStreamBootstrapTimer;
   StreamSubscription<Map<String, dynamic>>? _progressStreamSub;
@@ -164,10 +165,7 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
       var excludedDownloadedCount = 0;
       try {
         final prefs = await prefsFuture;
-        final lastScannedAtStr = prefs.getString(_lastScannedAtKey);
-        if (lastScannedAtStr != null && lastScannedAtStr.isNotEmpty) {
-          lastScannedAt = DateTime.tryParse(lastScannedAtStr);
-        }
+        lastScannedAt = readLocalLibraryLastScannedAt(prefs);
         excludedDownloadedCount =
             prefs.getInt(_excludedDownloadedCountKey) ?? 0;
       } catch (e) {
@@ -193,74 +191,11 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
     await _loadFromDatabase();
   }
 
-  Set<String> _buildPathMatchKeys(String? filePath) {
-    final raw = filePath?.trim() ?? '';
-    if (raw.isEmpty) return const {};
-
-    final cleaned = raw.startsWith('EXISTS:') ? raw.substring(7) : raw;
-    final keys = <String>{};
-
-    void addNormalized(String value) {
-      final trimmed = value.trim();
-      if (trimmed.isEmpty) return;
-      keys.add(trimmed);
-      keys.add(trimmed.toLowerCase());
-      if (trimmed.contains('\\')) {
-        final slash = trimmed.replaceAll('\\', '/');
-        keys.add(slash);
-        keys.add(slash.toLowerCase());
-      }
-      if (trimmed.contains('%')) {
-        try {
-          final decoded = Uri.decodeFull(trimmed);
-          keys.add(decoded);
-          keys.add(decoded.toLowerCase());
-        } catch (_) {}
-      }
-
-      Uri? parsed;
-      try {
-        parsed = Uri.parse(trimmed);
-      } catch (_) {}
-
-      if (parsed != null && parsed.hasScheme) {
-        final noQueryOrFragment = parsed.replace(query: null, fragment: null);
-        keys.add(noQueryOrFragment.toString());
-        keys.add(noQueryOrFragment.toString().toLowerCase());
-
-        if (parsed.scheme == 'file') {
-          try {
-            final fileOnly = parsed.toFilePath();
-            if (fileOnly.isNotEmpty) {
-              keys.add(fileOnly);
-              keys.add(fileOnly.toLowerCase());
-              if (fileOnly.contains('\\')) {
-                final slash = fileOnly.replaceAll('\\', '/');
-                keys.add(slash);
-                keys.add(slash.toLowerCase());
-              }
-            }
-          } catch (_) {}
-        }
-      } else if (trimmed.startsWith('/')) {
-        try {
-          final asFileUri = Uri.file(trimmed).toString();
-          keys.add(asFileUri);
-          keys.add(asFileUri.toLowerCase());
-        } catch (_) {}
-      }
-    }
-
-    addNormalized(cleaned);
-
-    return keys;
-  }
-
   bool _isDownloadedPath(String? filePath, Set<String> downloadedPathKeys) {
     if (filePath == null || filePath.isEmpty || downloadedPathKeys.isEmpty) {
       return false;
     }
-    final candidateKeys = _buildPathMatchKeys(filePath);
+    final candidateKeys = buildPathMatchKeys(filePath);
     for (final key in candidateKeys) {
       if (downloadedPathKeys.contains(key)) {
         return true;
@@ -322,8 +257,9 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
     String? resolvedPath;
     bool didStartSecurityAccess = false;
     if (Platform.isIOS && iosBookmark != null && iosBookmark.isNotEmpty) {
-      resolvedPath =
-          await PlatformBridge.startAccessingIosBookmark(iosBookmark);
+      resolvedPath = await PlatformBridge.startAccessingIosBookmark(
+        iosBookmark,
+      );
       if (resolvedPath != null) {
         didStartSecurityAccess = true;
         _log.i('Started iOS security-scoped access: $resolvedPath');
@@ -354,7 +290,7 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
       };
       final downloadedPathKeys = <String>{};
       for (final path in allHistoryPaths) {
-        downloadedPathKeys.addAll(_buildPathMatchKeys(path));
+        downloadedPathKeys.addAll(buildPathMatchKeys(path));
       }
       _log.i(
         'Excluding ${allHistoryPaths.length} downloaded files from library scan '
@@ -376,7 +312,6 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
         int skippedDownloads = 0;
         for (final json in results) {
           final filePath = json['filePath'] as String?;
-          // Skip files that are already in download history
           if (_isDownloadedPath(filePath, downloadedPathKeys)) {
             skippedDownloads++;
             continue;
@@ -394,11 +329,16 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
         if (items.isNotEmpty) {
           await _db.upsertBatch(items.map((e) => e.toJson()).toList());
         }
+        final persistedItems =
+            (await _db.getAll())
+                .map(LocalLibraryItem.fromJson)
+                .toList(growable: false)
+              ..sort(_compareLibraryItems);
 
         final now = DateTime.now();
         try {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_lastScannedAtKey, now.toIso8601String());
+          await writeLocalLibraryLastScannedAt(prefs, now);
           await prefs.setInt(_excludedDownloadedCountKey, skippedDownloads);
           _log.d('Saved lastScannedAt: $now');
         } catch (e) {
@@ -406,7 +346,7 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
         }
 
         state = state.copyWith(
-          items: items,
+          items: persistedItems,
           isScanning: false,
           scanProgress: 100,
           lastScannedAt: now,
@@ -415,11 +355,11 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
         );
 
         _log.i(
-          'Full scan complete: ${items.length} tracks found, '
+          'Full scan complete: ${persistedItems.length} tracks found, '
           '$skippedDownloads already in downloads',
         );
         await _showScanCompleteNotification(
-          totalTracks: items.length,
+          totalTracks: persistedItems.length,
           excludedDownloadedCount: skippedDownloads,
           errorCount: state.scanErrorCount,
         );
@@ -440,18 +380,41 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
           _log.i('Backfilled ${backfilledModTimes.length} legacy mod times');
         }
 
-        // Use appropriate incremental scan method based on SAF or not
-        final Map<String, dynamic> result;
-        if (isSaf) {
-          result = await PlatformBridge.scanSafTreeIncremental(
-            effectiveFolderPath,
-            existingFiles,
-          );
-        } else {
-          result = await PlatformBridge.scanLibraryFolderIncremental(
-            effectiveFolderPath,
-            existingFiles,
-          );
+        final useSnapshotBridge =
+            Platform.isAndroid && existingFiles.isNotEmpty;
+        final snapshotPath = useSnapshotBridge
+            ? await _db.writeFileModTimesSnapshot()
+            : null;
+
+        Map<String, dynamic> result;
+        try {
+          if (isSaf) {
+            result = useSnapshotBridge && snapshotPath != null
+                ? await PlatformBridge.scanSafTreeIncrementalFromSnapshot(
+                    effectiveFolderPath,
+                    snapshotPath,
+                  )
+                : await PlatformBridge.scanSafTreeIncremental(
+                    effectiveFolderPath,
+                    existingFiles,
+                  );
+          } else {
+            result = useSnapshotBridge && snapshotPath != null
+                ? await PlatformBridge.scanLibraryFolderIncrementalFromSnapshot(
+                    effectiveFolderPath,
+                    snapshotPath,
+                  )
+                : await PlatformBridge.scanLibraryFolderIncremental(
+                    effectiveFolderPath,
+                    existingFiles,
+                  );
+          }
+        } finally {
+          if (snapshotPath != null) {
+            try {
+              await File(snapshotPath).delete();
+            } catch (_) {}
+          }
         }
 
         if (_scanCancelRequested) {
@@ -460,7 +423,6 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
           return;
         }
 
-        // Parse incremental scan result
         // SAF returns 'files' and 'removedUris', non-SAF returns 'scanned' and 'deletedPaths'
         final scannedList =
             (result['files'] as List<dynamic>?) ??
@@ -482,8 +444,14 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
           '$skippedCount skipped, ${deletedPaths.length} deleted, $totalFiles total',
         );
 
+        // Build the incremental merge base from SQLite, not the current
+        // provider state. Startup auto-scan can fire before `state.items` has
+        // finished loading, which would otherwise drop unchanged rows from the
+        // in-memory library until a manual full rescan.
+        final existingJson = await _db.getAll();
         final currentByPath = <String, LocalLibraryItem>{
-          for (final item in state.items) item.filePath: item,
+          for (final item in existingJson.map(LocalLibraryItem.fromJson))
+            item.filePath: item,
         };
         final existingDownloadedPaths = <String>[];
         currentByPath.removeWhere((path, _) {
@@ -526,7 +494,6 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
           }
         }
 
-        // Delete removed items
         if (deletedPaths.isNotEmpty) {
           final deleteCount = await _db.deleteByPaths(deletedPaths);
           for (final path in deletedPaths) {
@@ -535,13 +502,16 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
           _log.i('Deleted $deleteCount items from database');
         }
 
-        final items = currentByPath.values.toList(growable: false)
-          ..sort(_compareLibraryItems);
+        final items =
+            (await _db.getAll())
+                .map(LocalLibraryItem.fromJson)
+                .toList(growable: false)
+              ..sort(_compareLibraryItems);
 
         final now = DateTime.now();
         try {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_lastScannedAtKey, now.toIso8601String());
+          await writeLocalLibraryLastScannedAt(prefs, now);
           await prefs.setInt(_excludedDownloadedCountKey, skippedDownloads);
           _log.d('Saved lastScannedAt: $now');
         } catch (e) {
@@ -834,8 +804,9 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
   Future<int> cleanupMissingFiles({String? iosBookmark}) async {
     bool didStartSecurityAccess = false;
     if (Platform.isIOS && iosBookmark != null && iosBookmark.isNotEmpty) {
-      final resolved =
-          await PlatformBridge.startAccessingIosBookmark(iosBookmark);
+      final resolved = await PlatformBridge.startAccessingIosBookmark(
+        iosBookmark,
+      );
       if (resolved != null) {
         didStartSecurityAccess = true;
       }
@@ -858,7 +829,7 @@ class LocalLibraryNotifier extends Notifier<LocalLibraryState> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_lastScannedAtKey);
+      await clearLocalLibraryLastScannedAt(prefs);
       await prefs.remove(_excludedDownloadedCountKey);
     } catch (e) {
       _log.w('Failed to clear lastScannedAt: $e');

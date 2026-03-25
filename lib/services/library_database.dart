@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -121,7 +123,7 @@ class LibraryDatabase {
 
     return await openDatabase(
       path,
-      version: 4, // Bumped version for bitrate column
+      version: 4,
       onConfigure: (db) async {
         await db.rawQuery('PRAGMA journal_mode = WAL');
         await db.execute('PRAGMA synchronous = NORMAL');
@@ -176,7 +178,6 @@ class LibraryDatabase {
     _log.i('Upgrading library database from v$oldVersion to v$newVersion');
 
     if (oldVersion < 2) {
-      // Add cover_path column
       await db.execute('ALTER TABLE library ADD COLUMN cover_path TEXT');
       _log.i('Added cover_path column');
     }
@@ -241,8 +242,6 @@ class LibraryDatabase {
       'format': row['format'],
     };
   }
-
-  // CRUD Operations
 
   Future<void> upsert(Map<String, dynamic> json) async {
     final db = await database;
@@ -332,13 +331,11 @@ class LibraryDatabase {
     String? trackName,
     String? artistName,
   }) async {
-    // First try ISRC if available
     if (isrc != null && isrc.isNotEmpty) {
       final byIsrc = await getByIsrc(isrc);
       if (byIsrc != null) return byIsrc;
     }
 
-    // Then try name matching
     if (trackName != null && artistName != null) {
       final matches = await findByTrackAndArtist(trackName, artistName);
       if (matches.isNotEmpty) return matches.first;
@@ -473,6 +470,34 @@ class LibraryDatabase {
     return result;
   }
 
+  /// Export file modification times to a compact line-based snapshot that
+  /// native code can read without receiving a large method-channel payload.
+  Future<String> writeFileModTimesSnapshot() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT file_path, COALESCE(file_mod_time, 0) AS file_mod_time FROM library',
+    );
+    final tempDir = await getTemporaryDirectory();
+    final file = File(
+      join(
+        tempDir.path,
+        'library_file_mod_times_${DateTime.now().microsecondsSinceEpoch}.tsv',
+      ),
+    );
+    final buffer = StringBuffer();
+    for (final row in rows) {
+      final path = row['file_path'] as String?;
+      if (path == null || path.isEmpty) continue;
+      final modTime = (row['file_mod_time'] as num?)?.toInt() ?? 0;
+      buffer
+        ..write(modTime)
+        ..write('\t')
+        ..writeln(path);
+    }
+    await file.writeAsString(buffer.toString(), flush: true);
+    return file.path;
+  }
+
   /// Update file_mod_time for existing rows using file_path as key.
   Future<void> updateFileModTimes(Map<String, int> fileModTimes) async {
     if (fileModTimes.isEmpty) return;
@@ -496,7 +521,6 @@ class LibraryDatabase {
     return rows.map((r) => r['file_path'] as String).toSet();
   }
 
-  /// Delete multiple items by their file paths
   Future<int> deleteByPaths(List<String> filePaths) async {
     if (filePaths.isEmpty) return 0;
     final db = await database;

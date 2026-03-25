@@ -23,6 +23,7 @@ AppSettings _$AppSettingsFromJson(Map<String, dynamic> json) => AppSettings(
   updateChannel: json['updateChannel'] as String? ?? 'stable',
   hasSearchedBefore: json['hasSearchedBefore'] as bool? ?? false,
   folderOrganization: json['folderOrganization'] as String? ?? 'none',
+  createPlaylistFolder: json['createPlaylistFolder'] as bool? ?? false,
   useAlbumArtistForFolders: json['useAlbumArtistForFolders'] as bool? ?? true,
   usePrimaryArtistOnly: json['usePrimaryArtistOnly'] as bool? ?? false,
   filterContributingArtistsInAlbumArtist:
@@ -33,11 +34,12 @@ AppSettings _$AppSettingsFromJson(Map<String, dynamic> json) => AppSettings(
   spotifyClientId: json['spotifyClientId'] as String? ?? '',
   spotifyClientSecret: json['spotifyClientSecret'] as String? ?? '',
   useCustomSpotifyCredentials:
-      json['useCustomSpotifyCredentials'] as bool? ?? true,
+      json['useCustomSpotifyCredentials'] as bool? ?? false,
   metadataSource: json['metadataSource'] as String? ?? 'deezer',
   enableLogging: json['enableLogging'] as bool? ?? false,
   useExtensionProviders: json['useExtensionProviders'] as bool? ?? true,
   searchProvider: json['searchProvider'] as String?,
+  homeFeedProvider: json['homeFeedProvider'] as String?,
   separateSingles: json['separateSingles'] as bool? ?? false,
   albumFolderStructure:
       json['albumFolderStructure'] as String? ?? 'artist_album',
@@ -58,6 +60,7 @@ AppSettings _$AppSettingsFromJson(Map<String, dynamic> json) => AppSettings(
   localLibraryBookmark: json['localLibraryBookmark'] as String? ?? '',
   localLibraryShowDuplicates:
       json['localLibraryShowDuplicates'] as bool? ?? true,
+  localLibraryAutoScan: json['localLibraryAutoScan'] as String? ?? 'off',
   hasCompletedTutorial: json['hasCompletedTutorial'] as bool? ?? false,
   lyricsProviders:
       (json['lyricsProviders'] as List<dynamic>?)
@@ -100,6 +103,7 @@ Map<String, dynamic> _$AppSettingsToJson(
   'updateChannel': instance.updateChannel,
   'hasSearchedBefore': instance.hasSearchedBefore,
   'folderOrganization': instance.folderOrganization,
+  'createPlaylistFolder': instance.createPlaylistFolder,
   'useAlbumArtistForFolders': instance.useAlbumArtistForFolders,
   'usePrimaryArtistOnly': instance.usePrimaryArtistOnly,
   'filterContributingArtistsInAlbumArtist':
@@ -114,6 +118,7 @@ Map<String, dynamic> _$AppSettingsToJson(
   'enableLogging': instance.enableLogging,
   'useExtensionProviders': instance.useExtensionProviders,
   'searchProvider': instance.searchProvider,
+  'homeFeedProvider': instance.homeFeedProvider,
   'separateSingles': instance.separateSingles,
   'albumFolderStructure': instance.albumFolderStructure,
   'showExtensionStore': instance.showExtensionStore,
@@ -131,6 +136,7 @@ Map<String, dynamic> _$AppSettingsToJson(
   'localLibraryPath': instance.localLibraryPath,
   'localLibraryBookmark': instance.localLibraryBookmark,
   'localLibraryShowDuplicates': instance.localLibraryShowDuplicates,
+  'localLibraryAutoScan': instance.localLibraryAutoScan,
   'hasCompletedTutorial': instance.hasCompletedTutorial,
   'lyricsProviders': instance.lyricsProviders,
   'lyricsIncludeTranslationNetease': instance.lyricsIncludeTranslationNetease,

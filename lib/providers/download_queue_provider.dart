@@ -122,7 +122,7 @@ class DownloadHistoryItem {
         artistName: json['artistName'] as String,
         albumName: json['albumName'] as String,
         albumArtist: normalizeOptionalString(json['albumArtist'] as String?),
-        coverUrl: json['coverUrl'] as String?,
+        coverUrl: normalizeCoverReference(json['coverUrl']?.toString()),
         filePath: json['filePath'] as String,
         storageMode: json['storageMode'] as String?,
         downloadTreeUri: json['downloadTreeUri'] as String?,
@@ -176,7 +176,7 @@ class DownloadHistoryItem {
       artistName: artistName ?? this.artistName,
       albumName: albumName ?? this.albumName,
       albumArtist: albumArtist ?? this.albumArtist,
-      coverUrl: coverUrl ?? this.coverUrl,
+      coverUrl: normalizeCoverReference(coverUrl ?? this.coverUrl),
       filePath: filePath ?? this.filePath,
       storageMode: storageMode ?? this.storageMode,
       downloadTreeUri: downloadTreeUri ?? this.downloadTreeUri,
@@ -205,6 +205,7 @@ class DownloadHistoryState {
   final List<DownloadHistoryItem> items;
   final Map<String, DownloadHistoryItem> _bySpotifyId;
   final Map<String, DownloadHistoryItem> _byIsrc;
+  final Map<String, DownloadHistoryItem> _byTrackArtistKey;
 
   DownloadHistoryState({this.items = const []})
     : _bySpotifyId = Map.fromEntries(
@@ -218,7 +219,24 @@ class DownloadHistoryState {
         items
             .where((item) => item.isrc != null && item.isrc!.isNotEmpty)
             .map((item) => MapEntry(item.isrc!, item)),
+      ),
+      _byTrackArtistKey = Map.fromEntries(
+        items
+            .map(
+              (item) => MapEntry(
+                _trackArtistKey(item.trackName, item.artistName),
+                item,
+              ),
+            )
+            .where((entry) => entry.key.isNotEmpty),
       );
+
+  static String _trackArtistKey(String trackName, String artistName) {
+    final normalizedTrack = trackName.trim().toLowerCase();
+    if (normalizedTrack.isEmpty) return '';
+    final normalizedArtist = artistName.trim().toLowerCase();
+    return '$normalizedTrack|$normalizedArtist';
+  }
 
   bool isDownloaded(String spotifyId) => _bySpotifyId.containsKey(spotifyId);
 
@@ -231,16 +249,9 @@ class DownloadHistoryState {
     String trackName,
     String artistName,
   ) {
-    final normalizedTrack = trackName.trim().toLowerCase();
-    final normalizedArtist = artistName.trim().toLowerCase();
-    if (normalizedTrack.isEmpty) return null;
-    for (final item in items) {
-      if (item.trackName.trim().toLowerCase() == normalizedTrack &&
-          item.artistName.trim().toLowerCase() == normalizedArtist) {
-        return item;
-      }
-    }
-    return null;
+    final key = _trackArtistKey(trackName, artistName);
+    if (key.isEmpty) return null;
+    return _byTrackArtistKey[key];
   }
 
   DownloadHistoryState copyWith({List<DownloadHistoryItem>? items}) {
@@ -252,10 +263,12 @@ class DownloadHistoryNotifier extends Notifier<DownloadHistoryState> {
   static const int _safRepairBatchSize = 20;
   static const int _safRepairMaxPerLaunch = 60;
   static const int _audioMetadataBackfillMaxPerLaunch = 24;
+  static const _startupMaintenanceDelay = Duration(seconds: 2);
   final HistoryDatabase _db = HistoryDatabase.instance;
   bool _isLoaded = false;
   bool _isSafRepairInProgress = false;
   bool _isAudioMetadataBackfillInProgress = false;
+  bool _startupMaintenanceScheduled = false;
 
   @override
   DownloadHistoryState build() {
@@ -292,31 +305,43 @@ class DownloadHistoryNotifier extends Notifier<DownloadHistoryState> {
 
       state = state.copyWith(items: items);
       _historyLog.i('Loaded ${items.length} items from SQLite database');
-
-      if (Platform.isAndroid) {
-        Future.microtask(() async {
-          await _repairMissingSafEntries(
-            items,
-            maxItems: _safRepairMaxPerLaunch,
-          );
-          await cleanupOrphanedDownloads();
-          await _backfillAudioMetadata(
-            state.items,
-            maxItems: _audioMetadataBackfillMaxPerLaunch,
-          );
-        });
-      } else {
-        Future.microtask(() async {
-          await cleanupOrphanedDownloads();
-          await _backfillAudioMetadata(
-            state.items,
-            maxItems: _audioMetadataBackfillMaxPerLaunch,
-          );
-        });
-      }
+      _scheduleStartupMaintenance(items);
     } catch (e, stack) {
       _historyLog.e('Failed to load history from database: $e', e, stack);
     }
+  }
+
+  void _scheduleStartupMaintenance(List<DownloadHistoryItem> initialItems) {
+    if (_startupMaintenanceScheduled) {
+      return;
+    }
+    _startupMaintenanceScheduled = true;
+
+    unawaited(
+      Future<void>.delayed(_startupMaintenanceDelay, () async {
+        try {
+          if (Platform.isAndroid) {
+            await _repairMissingSafEntries(
+              initialItems,
+              maxItems: _safRepairMaxPerLaunch,
+            );
+          }
+
+          await cleanupOrphanedDownloads();
+
+          final currentItems = state.items;
+          if (currentItems.isNotEmpty) {
+            await _backfillAudioMetadata(
+              currentItems,
+              maxItems: _audioMetadataBackfillMaxPerLaunch,
+            );
+          }
+        } catch (e, stack) {
+          _historyLog.w('Startup history maintenance failed: $e');
+          _historyLog.d('$stack');
+        }
+      }),
+    );
   }
 
   String _fileNameFromUri(String uri) {
@@ -745,6 +770,37 @@ class DownloadHistoryNotifier extends Notifier<DownloadHistoryState> {
 
   /// Remove history entries where the file no longer exists on disk
   /// Returns the number of orphaned entries removed
+  /// Audio file extensions that the app commonly produces or converts between.
+  static const _audioExtensions = [
+    '.flac',
+    '.m4a',
+    '.mp3',
+    '.opus',
+    '.ogg',
+    '.wav',
+    '.aac',
+  ];
+
+  /// When the original file is missing, check whether a sibling with a
+  /// different audio extension exists (e.g. the user converted .flac → .opus).
+  /// Returns the path of the first match found, or `null` if none exist.
+  Future<String?> _findConvertedSibling(String originalPath) async {
+    // Strip the current extension to get the base path.
+    final dotIndex = originalPath.lastIndexOf('.');
+    if (dotIndex < 0) return null;
+    final basePath = originalPath.substring(0, dotIndex);
+    final originalExt = originalPath.substring(dotIndex).toLowerCase();
+
+    for (final ext in _audioExtensions) {
+      if (ext == originalExt) continue;
+      final candidatePath = '$basePath$ext';
+      try {
+        if (await fileExists(candidatePath)) return candidatePath;
+      } catch (_) {}
+    }
+    return null;
+  }
+
   Future<int> cleanupOrphanedDownloads() async {
     _historyLog.i('Starting orphaned downloads cleanup...');
 
@@ -766,7 +822,21 @@ class DownloadHistoryNotifier extends Notifier<DownloadHistoryState> {
           if (filePath == null || filePath.isEmpty) return null;
           pathById[id] = filePath;
           try {
-            return MapEntry(id, await fileExists(filePath));
+            if (await fileExists(filePath)) return MapEntry(id, true);
+
+            // Original file missing -- check for a converted sibling.
+            final sibling = await _findConvertedSibling(filePath);
+            if (sibling != null) {
+              _historyLog.i(
+                'Found converted sibling for $id: $filePath → $sibling',
+              );
+              // Update the stored path so future checks succeed immediately.
+              await _db.updateFilePath(id, sibling);
+              pathById[id] = sibling;
+              return MapEntry(id, true);
+            }
+
+            return MapEntry(id, false);
           } catch (e) {
             _historyLog.w('Error checking file existence for $id: $e');
             return MapEntry(id, false);
@@ -904,11 +974,12 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   StreamSubscription<Map<String, dynamic>>? _progressStreamSub;
   int _downloadCount = 0;
   static const _cleanupInterval = 50;
-  static const _progressPollingInterval = Duration(milliseconds: 800);
+  static const _progressPollingInterval = Duration(milliseconds: 1200);
   static const _idleProgressPollEveryTicks = 3;
   static const _queueSchedulingInterval = Duration(milliseconds: 250);
   static const _queuePersistDebounceDuration = Duration(milliseconds: 350);
   static const _bytesUiStep = 104857; // ~0.1 MiB, matches one-decimal MB UI.
+  static const _serviceProgressStepPercent = 2;
   final NotificationService _notificationService = NotificationService();
   final AppStateDatabase _appStateDb = AppStateDatabase.instance;
   int _totalQueuedAtStart = 0;
@@ -934,6 +1005,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   int _lastNotifPercent = -1;
   int _lastNotifQueueCount = -1;
   final Set<String> _locallyCancelledItemIds = {};
+  final Set<String> _pausePendingItemIds = {};
 
   double _normalizeProgressForUi(double value) {
     final clamped = value.clamp(0.0, 1.0).toDouble();
@@ -1253,6 +1325,10 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       if (localItem == null) {
         continue;
       }
+      if (_isPausePending(itemId)) {
+        PlatformBridge.clearItemProgress(itemId).catchError((_) {});
+        continue;
+      }
       if (localItem.status == DownloadStatus.skipped) {
         PlatformBridge.clearItemProgress(itemId).catchError((_) {});
         continue;
@@ -1445,12 +1521,17 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         .round()
         .clamp(0, 100)
         .toInt();
+    final progressBucket = progressPercent == 100
+        ? 100
+        : ((progressPercent ~/ _serviceProgressStepPercent) *
+                  _serviceProgressStepPercent)
+              .clamp(0, 100);
 
     final didContentChange =
         trackName != _lastServiceTrackName ||
         artistName != _lastServiceArtistName ||
         queueCount != _lastServiceQueueCount ||
-        progressPercent != _lastServicePercent;
+        progressBucket != _lastServicePercent;
     final allowHeartbeat =
         now.difference(_lastServiceUpdateAt) >= const Duration(seconds: 5);
 
@@ -1460,7 +1541,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
 
     _lastServiceTrackName = trackName;
     _lastServiceArtistName = artistName;
-    _lastServicePercent = progressPercent;
+    _lastServicePercent = progressBucket;
     _lastServiceQueueCount = queueCount;
     _lastServiceUpdateAt = now;
 
@@ -1570,11 +1651,23 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     String folderOrganization, {
     bool separateSingles = false,
     String albumFolderStructure = 'artist_album',
+    bool createPlaylistFolder = false,
     bool useAlbumArtistForFolders = true,
     bool usePrimaryArtistOnly = false,
     bool filterContributingArtistsInAlbumArtist = false,
+    String? playlistName,
   }) async {
     String baseDir = state.outputDir;
+    if (createPlaylistFolder &&
+        folderOrganization != 'playlist' &&
+        playlistName != null &&
+        playlistName.isNotEmpty) {
+      final playlistFolder = _sanitizeFolderName(playlistName);
+      if (playlistFolder.isNotEmpty) {
+        baseDir = '$baseDir${Platform.pathSeparator}$playlistFolder';
+        await _ensureDirExists(baseDir, label: 'Playlist folder');
+      }
+    }
     final normalizedAlbumArtist = normalizeOptionalString(track.albumArtist);
     var folderArtist = useAlbumArtistForFolders
         ? normalizedAlbumArtist ?? track.artistName
@@ -1647,6 +1740,11 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
 
     String subPath = '';
     switch (folderOrganization) {
+      case 'playlist':
+        if (playlistName != null && playlistName.isNotEmpty) {
+          subPath = _sanitizeFolderName(playlistName);
+        }
+        break;
       case 'artist':
         final artistName = _sanitizeFolderName(folderArtist);
         subPath = artistName;
@@ -1722,10 +1820,19 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     String folderOrganization, {
     bool separateSingles = false,
     String albumFolderStructure = 'artist_album',
+    bool createPlaylistFolder = false,
     bool useAlbumArtistForFolders = true,
     bool usePrimaryArtistOnly = false,
     bool filterContributingArtistsInAlbumArtist = false,
+    String? playlistName,
   }) async {
+    final playlistPrefix =
+        createPlaylistFolder &&
+            folderOrganization != 'playlist' &&
+            playlistName != null &&
+            playlistName.isNotEmpty
+        ? _sanitizeFolderName(playlistName)
+        : '';
     final normalizedAlbumArtist = normalizeOptionalString(track.albumArtist);
     var folderArtist = useAlbumArtistForFolders
         ? normalizedAlbumArtist ?? track.artistName
@@ -1745,48 +1852,71 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
 
       if (albumFolderStructure == 'artist_album_singles') {
         if (isSingle) {
-          return '$artistName/Singles';
+          return _joinRelativePath(playlistPrefix, '$artistName/Singles');
         }
         final albumName = _sanitizeFolderName(track.albumName);
-        return '$artistName/$albumName';
+        return _joinRelativePath(playlistPrefix, '$artistName/$albumName');
       }
 
       if (isSingle) {
-        return 'Singles';
+        return _joinRelativePath(playlistPrefix, 'Singles');
       }
 
       final albumName = _sanitizeFolderName(track.albumName);
       final year = _extractYear(track.releaseDate);
       switch (albumFolderStructure) {
         case 'album_only':
-          return 'Albums/$albumName';
+          return _joinRelativePath(playlistPrefix, 'Albums/$albumName');
         case 'artist_year_album':
           final yearAlbum = year != null ? '[$year] $albumName' : albumName;
-          return 'Albums/$artistName/$yearAlbum';
+          return _joinRelativePath(
+            playlistPrefix,
+            'Albums/$artistName/$yearAlbum',
+          );
         case 'year_album':
           final yearAlbum = year != null ? '[$year] $albumName' : albumName;
-          return 'Albums/$yearAlbum';
+          return _joinRelativePath(playlistPrefix, 'Albums/$yearAlbum');
         default:
-          return 'Albums/$artistName/$albumName';
+          return _joinRelativePath(
+            playlistPrefix,
+            'Albums/$artistName/$albumName',
+          );
       }
     }
 
     if (folderOrganization == 'none') {
-      return '';
+      return playlistPrefix;
     }
 
     switch (folderOrganization) {
+      case 'playlist':
+        if (playlistName != null && playlistName.isNotEmpty) {
+          return _sanitizeFolderName(playlistName);
+        }
+        return '';
       case 'artist':
-        return _sanitizeFolderName(folderArtist);
+        return _joinRelativePath(
+          playlistPrefix,
+          _sanitizeFolderName(folderArtist),
+        );
       case 'album':
-        return _sanitizeFolderName(track.albumName);
+        return _joinRelativePath(
+          playlistPrefix,
+          _sanitizeFolderName(track.albumName),
+        );
       case 'artist_album':
         final artistName = _sanitizeFolderName(folderArtist);
         final albumName = _sanitizeFolderName(track.albumName);
-        return '$artistName/$albumName';
+        return _joinRelativePath(playlistPrefix, '$artistName/$albumName');
       default:
-        return '';
+        return playlistPrefix;
     }
+  }
+
+  String _joinRelativePath(String prefix, String suffix) {
+    if (prefix.isEmpty) return suffix;
+    if (suffix.isEmpty) return prefix;
+    return '$prefix/$suffix';
   }
 
   String _determineOutputExt(String quality, String service) {
@@ -1900,7 +2030,12 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     );
   }
 
-  String addToQueue(Track track, String service, {String? qualityOverride}) {
+  String addToQueue(
+    Track track,
+    String service, {
+    String? qualityOverride,
+    String? playlistName,
+  }) {
     final settings = ref.read(settingsProvider);
     updateSettings(settings);
 
@@ -1912,6 +2047,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       service: service,
       createdAt: DateTime.now(),
       qualityOverride: qualityOverride,
+      playlistName: playlistName,
     );
 
     state = state.copyWith(items: [...state.items, item]);
@@ -1928,6 +2064,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     List<Track> tracks,
     String service, {
     String? qualityOverride,
+    String? playlistName,
   }) {
     final settings = ref.read(settingsProvider);
     updateSettings(settings);
@@ -1942,6 +2079,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         service: service,
         createdAt: DateTime.now(),
         qualityOverride: qualityOverride,
+        playlistName: playlistName,
       );
     }).toList();
 
@@ -2027,12 +2165,42 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     return resolved?.status == DownloadStatus.skipped;
   }
 
+  bool _isPausePending(String id) => _pausePendingItemIds.contains(id);
+
+  void _requeueItemForPause(String id) {
+    final updatedItems = state.items
+        .map((item) {
+          if (item.id != id) return item;
+          if (item.status == DownloadStatus.completed ||
+              item.status == DownloadStatus.failed ||
+              item.status == DownloadStatus.skipped) {
+            return item;
+          }
+          return item.copyWith(
+            status: DownloadStatus.queued,
+            progress: 0,
+            speedMBps: 0,
+            bytesReceived: 0,
+          );
+        })
+        .toList(growable: false);
+
+    final currentDownload = state.currentDownload?.id == id
+        ? null
+        : state.currentDownload;
+    state = state.copyWith(
+      items: updatedItems,
+      currentDownload: currentDownload,
+    );
+  }
+
   void _requestNativeCancel(String id) {
     PlatformBridge.cancelDownload(id).catchError((_) {});
     PlatformBridge.clearItemProgress(id).catchError((_) {});
   }
 
   void cancelItem(String id) {
+    _pausePendingItemIds.remove(id);
     _locallyCancelledItemIds.add(id);
     updateItemStatus(id, DownloadStatus.skipped);
     _requestNativeCancel(id);
@@ -2065,6 +2233,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         .toList(growable: false);
 
     if (activeIds.isNotEmpty) {
+      _pausePendingItemIds.addAll(activeIds);
       _locallyCancelledItemIds.addAll(activeIds);
       for (final id in activeIds) {
         _requestNativeCancel(id);
@@ -2077,11 +2246,29 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     if (!wasProcessing) {
       _locallyCancelledItemIds.clear();
     }
+    _pausePendingItemIds.clear();
   }
 
   void pauseQueue() {
     if (state.isProcessing && !state.isPaused) {
-      state = state.copyWith(isPaused: true);
+      final activeIds = state.items
+          .where(
+            (item) =>
+                item.status == DownloadStatus.downloading ||
+                item.status == DownloadStatus.finalizing,
+          )
+          .map((item) => item.id)
+          .toSet();
+
+      if (activeIds.isNotEmpty) {
+        _pausePendingItemIds.addAll(activeIds);
+        for (final id in activeIds) {
+          _requestNativeCancel(id);
+          _requeueItemForPause(id);
+        }
+      }
+
+      state = state.copyWith(isPaused: true, currentDownload: null);
       _notificationService.cancelDownloadNotification();
       _log.i('Queue paused');
     }
@@ -2283,7 +2470,11 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     }
   }
 
+  /// Deezer CDN cover size pattern: /WxH-0-0-0-0.jpg
+  static final _deezerSizeRegex = RegExp(r'/(\d+)x(\d+)-\d+-\d+-\d+-\d+\.jpg$');
+
   String _upgradeToMaxQualityCover(String coverUrl) {
+    // Spotify CDN upgrade (hash-based size identifiers)
     const spotifySize300 = 'ab67616d00001e02';
     const spotifySize640 = 'ab67616d0000b273';
     const spotifySizeMax = 'ab67616d000082c1';
@@ -2292,9 +2483,27 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     if (result.contains(spotifySize300)) {
       result = result.replaceFirst(spotifySize300, spotifySize640);
     }
-
     if (result.contains(spotifySize640)) {
       result = result.replaceFirst(spotifySize640, spotifySizeMax);
+    }
+
+    // Deezer CDN upgrade (1000x1000 → 1800x1800)
+    if (result.contains('cdn-images.dzcdn.net')) {
+      final upgraded = result.replaceFirst(
+        _deezerSizeRegex,
+        '/1800x1800-000000-80-0-0.jpg',
+      );
+      if (upgraded != result) {
+        _log.d('Cover URL upgraded (Deezer): 1800x1800');
+        result = upgraded;
+      }
+    }
+
+    // Tidal CDN upgrade (1280x1280 → origin)
+    if (result.contains('resources.tidal.com') &&
+        result.contains('/1280x1280.jpg')) {
+      result = result.replaceFirst('/1280x1280.jpg', '/origin.jpg');
+      _log.d('Cover URL upgraded (Tidal): origin');
     }
 
     return result;
@@ -2322,11 +2531,26 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     final backendAlbum = normalizeOptionalString(
       backendResult['album'] as String?,
     );
+    final backendIsrc = normalizeOptionalString(
+      backendResult['isrc'] as String?,
+    );
+    final backendCoverUrl = normalizeCoverReference(
+      backendResult['cover_url']?.toString(),
+    );
+    final backendAlbumArtist = normalizeOptionalString(
+      backendResult['album_artist'] as String?,
+    );
 
-    if (backendTrackNum == null &&
-        backendDiscNum == null &&
-        backendYear == null &&
-        backendAlbum == null) {
+    final hasOverrides =
+        backendTrackNum != null ||
+        backendDiscNum != null ||
+        backendYear != null ||
+        backendAlbum != null ||
+        backendIsrc != null ||
+        backendCoverUrl != null ||
+        backendAlbumArtist != null;
+
+    if (!hasOverrides) {
       return baseTrack;
     }
 
@@ -2335,18 +2559,19 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       name: baseTrack.name,
       artistName: baseTrack.artistName,
       albumName: backendAlbum ?? baseTrack.albumName,
-      albumArtist: resolvedAlbumArtist,
+      albumArtist: backendAlbumArtist ?? resolvedAlbumArtist,
       artistId: baseTrack.artistId,
       albumId: baseTrack.albumId,
-      coverUrl: baseTrack.coverUrl,
+      coverUrl: backendCoverUrl ?? baseTrack.coverUrl,
       duration: baseTrack.duration,
-      isrc: baseTrack.isrc,
+      isrc: backendIsrc ?? baseTrack.isrc,
       trackNumber: backendTrackNum ?? baseTrack.trackNumber,
       discNumber: backendDiscNum ?? baseTrack.discNumber,
       releaseDate: backendYear ?? baseTrack.releaseDate,
       deezerId: baseTrack.deezerId,
       availability: baseTrack.availability,
       albumType: baseTrack.albumType,
+      totalTracks: baseTrack.totalTracks,
       source: baseTrack.source,
     );
   }
@@ -2366,7 +2591,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     }
 
     String? coverPath;
-    var coverUrl = track.coverUrl;
+    var coverUrl = normalizeRemoteHttpUrl(track.coverUrl);
     if (coverUrl != null && coverUrl.isNotEmpty) {
       try {
         if (settings.maxQualityCover) {
@@ -2552,7 +2777,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     }
 
     String? coverPath;
-    var coverUrl = track.coverUrl;
+    var coverUrl = normalizeRemoteHttpUrl(track.coverUrl);
     if (coverUrl != null && coverUrl.isNotEmpty) {
       try {
         if (settings.maxQualityCover) {
@@ -2720,7 +2945,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     }
 
     String? coverPath;
-    var coverUrl = track.coverUrl;
+    var coverUrl = normalizeRemoteHttpUrl(track.coverUrl);
     if (coverUrl != null && coverUrl.isNotEmpty) {
       try {
         if (settings.maxQualityCover) {
@@ -3060,6 +3285,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     }
     _log.d('Concurrent downloads: ${state.concurrentDownloads}');
     await _processQueueParallel();
+    final stoppedWhilePaused = state.isPaused;
 
     _stopProgressPolling();
 
@@ -3085,7 +3311,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     _log.i(
       'Queue stats - completed: $_completedInSession, failed: $_failedInSession, totalAtStart: $_totalQueuedAtStart',
     );
-    if (_totalQueuedAtStart > 0) {
+    if (!stoppedWhilePaused && _totalQueuedAtStart > 0) {
       await _notificationService.showQueueComplete(
         completedCount: _completedInSession,
         failedCount: _failedInSession,
@@ -3100,13 +3326,17 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       }
     }
 
-    _log.i('Queue processing finished');
+    if (stoppedWhilePaused) {
+      _log.i('Queue processing paused');
+    } else {
+      _log.i('Queue processing finished');
+    }
     state = state.copyWith(isProcessing: false, currentDownload: null);
 
     final hasQueuedItems = state.items.any(
       (item) => item.status == DownloadStatus.queued,
     );
-    if (hasQueuedItems) {
+    if (hasQueuedItems && !state.isPaused) {
       _log.i(
         'Found queued items after processing finished, restarting queue...',
       );
@@ -3122,8 +3352,15 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
 
     while (true) {
       if (state.isPaused) {
+        if (activeDownloads.isEmpty) {
+          _log.d('Queue is paused and no active downloads remain');
+          break;
+        }
         _log.d('Queue is paused, waiting for active downloads...');
-        await Future.delayed(_queueSchedulingInterval);
+        await Future.any([
+          Future.wait(activeDownloads.values),
+          Future.delayed(_queueSchedulingInterval),
+        ]);
         continue;
       }
 
@@ -3134,7 +3371,11 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       }
 
       final queuedItems = state.items
-          .where((item) => item.status == DownloadStatus.queued)
+          .where(
+            (item) =>
+                item.status == DownloadStatus.queued &&
+                !_pausePendingItemIds.contains(item.id),
+          )
           .toList();
 
       if (queuedItems.isEmpty && activeDownloads.isEmpty) {
@@ -3179,15 +3420,24 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     _stopProgressPolling();
     final remainingIds = state.items.map((item) => item.id).toSet();
     _locallyCancelledItemIds.removeWhere((id) => !remainingIds.contains(id));
+    _pausePendingItemIds.removeWhere((id) => !remainingIds.contains(id));
   }
 
   Future<void> _downloadSingleItem(DownloadItem item) async {
     _log.d('Processing: ${item.track.name} by ${item.track.artistName}');
     _log.d('Cover URL: ${item.track.coverUrl}');
+    var pausedDuringThisRun = false;
 
     final currentItem = _findItemById(item.id) ?? item;
     if (_isLocallyCancelled(item.id, item: currentItem)) {
       _log.i('Download was cancelled before start, skipping');
+      return;
+    }
+
+    if (_isPausePending(item.id)) {
+      pausedDuringThisRun = true;
+      _requeueItemForPause(item.id);
+      _log.i('Download is pause-pending before start, skipping');
       return;
     }
 
@@ -3196,6 +3446,21 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     updateItemStatus(item.id, DownloadStatus.downloading);
 
     try {
+      bool shouldAbortWork(String stage) {
+        final current = _findItemById(item.id);
+        if (_isLocallyCancelled(item.id, item: current)) {
+          _log.i('Download was cancelled $stage, skipping');
+          return true;
+        }
+        if (_isPausePending(item.id)) {
+          pausedDuringThisRun = true;
+          _requeueItemForPause(item.id);
+          _log.i('Download pause requested $stage, re-queueing');
+          return true;
+        }
+        return false;
+      }
+
       final settings = ref.read(settingsProvider);
       final metadataEmbeddingEnabled = settings.embedMetadata;
 
@@ -3259,6 +3524,8 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                 albumType:
                     (data['album_type'] as String?) ??
                     trackToDownload.albumType,
+                totalTracks:
+                    data['total_tracks'] as int? ?? trackToDownload.totalTracks,
                 source: trackToDownload.source,
               );
               _log.d(
@@ -3273,6 +3540,10 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         } catch (e, stack) {
           _log.w('Failed to enrich metadata: $e');
           _log.w('Stack trace: $stack');
+        }
+
+        if (shouldAbortWork('during metadata enrichment')) {
+          return;
         }
       }
 
@@ -3313,10 +3584,12 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
               settings.folderOrganization,
               separateSingles: settings.separateSingles,
               albumFolderStructure: settings.albumFolderStructure,
+              createPlaylistFolder: settings.createPlaylistFolder,
               useAlbumArtistForFolders: settings.useAlbumArtistForFolders,
               usePrimaryArtistOnly: settings.usePrimaryArtistOnly,
               filterContributingArtistsInAlbumArtist:
                   settings.filterContributingArtistsInAlbumArtist,
+              playlistName: item.playlistName,
             )
           : '';
       String? appOutputDir;
@@ -3327,10 +3600,12 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
               settings.folderOrganization,
               separateSingles: settings.separateSingles,
               albumFolderStructure: settings.albumFolderStructure,
+              createPlaylistFolder: settings.createPlaylistFolder,
               useAlbumArtistForFolders: settings.useAlbumArtistForFolders,
               usePrimaryArtistOnly: settings.usePrimaryArtistOnly,
               filterContributingArtistsInAlbumArtist:
                   settings.filterContributingArtistsInAlbumArtist,
+              playlistName: item.playlistName,
             );
       var effectiveOutputDir = initialOutputDir;
       var effectiveSafMode = isSafMode;
@@ -3358,6 +3633,24 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       String? genre;
       String? label;
       String? copyright;
+      final extensionState = ref.read(extensionProvider);
+      final selectedExtensionDownloadProvider =
+          settings.useExtensionProviders &&
+          extensionState.extensions.any(
+            (e) =>
+                e.enabled &&
+                e.hasDownloadProvider &&
+                e.id.toLowerCase() == item.service.toLowerCase(),
+          );
+      final trackSource = (trackToDownload.source ?? '').trim().toLowerCase();
+      final shouldSkipExtensionSongLinkPrelookup =
+          trackSource.isNotEmpty &&
+          extensionState.extensions.any(
+            (e) =>
+                e.enabled &&
+                e.hasMetadataProvider &&
+                e.id.toLowerCase() == trackSource,
+          );
 
       String? deezerTrackId = trackToDownload.deezerId;
       if (deezerTrackId == null && trackToDownload.id.startsWith('deezer:')) {
@@ -3385,10 +3678,16 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         } catch (e) {
           _log.w('Failed to search Deezer by ISRC: $e');
         }
+
+        if (shouldAbortWork('during Deezer ISRC lookup')) {
+          return;
+        }
       }
 
       // Fallback: Use SongLink to convert Spotify ID to Deezer ID
-      if (deezerTrackId == null &&
+      if (!selectedExtensionDownloadProvider &&
+          deezerTrackId == null &&
+          !shouldSkipExtensionSongLinkPrelookup &&
           trackToDownload.id.isNotEmpty &&
           !trackToDownload.id.startsWith('deezer:') &&
           !trackToDownload.id.startsWith('extension:')) {
@@ -3452,7 +3751,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                 albumArtist: trackToDownload.albumArtist,
                 artistId: trackToDownload.artistId,
                 albumId: trackToDownload.albumId,
-                coverUrl: trackToDownload.coverUrl,
+                coverUrl: normalizeCoverReference(trackToDownload.coverUrl),
                 duration: trackToDownload.duration,
                 isrc: (deezerIsrc != null && _isValidISRC(deezerIsrc))
                     ? deezerIsrc
@@ -3471,6 +3770,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                 deezerId: deezerTrackId,
                 availability: trackToDownload.availability,
                 albumType: trackToDownload.albumType,
+                totalTracks: trackToDownload.totalTracks,
                 source: trackToDownload.source,
               );
               _log.d(
@@ -3484,6 +3784,19 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         } catch (e) {
           _log.w('Failed to convert Spotify to Deezer via SongLink: $e');
         }
+
+        if (shouldAbortWork('during SongLink availability lookup')) {
+          return;
+        }
+      } else if (selectedExtensionDownloadProvider && deezerTrackId == null) {
+        _log.d(
+          'Skipping Flutter SongLink Deezer prelookup for extension provider: ${item.service}',
+        );
+      } else if (shouldSkipExtensionSongLinkPrelookup &&
+          deezerTrackId == null) {
+        _log.d(
+          'Skipping Flutter SongLink Deezer prelookup for extension-sourced track; backend metadata enrichment will resolve identifiers first',
+        );
       }
 
       if (deezerTrackId != null && deezerTrackId.isNotEmpty) {
@@ -3503,11 +3816,14 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         } catch (e) {
           _log.w('Failed to fetch extended metadata from Deezer: $e');
         }
+
+        if (shouldAbortWork('during extended metadata lookup')) {
+          return;
+        }
       }
 
       Map<String, dynamic> result;
 
-      final extensionState = ref.read(extensionProvider);
       final hasActiveExtensions = extensionState.extensions.any(
         (e) => e.enabled,
       );
@@ -3541,6 +3857,11 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
             'Quality: $quality${item.qualityOverride != null ? ' (override)' : ''}',
           );
         }
+
+        if (!useSaf) {
+          await _ensureDirExists(outputDir, label: 'Output folder');
+        }
+
         _log.d('Output dir: $outputDir');
 
         final normalizedTrackNumber =
@@ -3554,10 +3875,26 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
             ? trackToDownload.discNumber!
             : 1;
 
+        String payloadSpotifyId = trackToDownload.id;
+        String payloadQobuzId = '';
+        String payloadTidalId = '';
+        if (trackToDownload.id.startsWith('qobuz:')) {
+          payloadQobuzId = trackToDownload.id.substring(6);
+          if (item.service == 'qobuz') {
+            payloadSpotifyId = '';
+          }
+        }
+        if (trackToDownload.id.startsWith('tidal:')) {
+          payloadTidalId = trackToDownload.id.substring(6);
+          if (item.service == 'tidal') {
+            payloadSpotifyId = '';
+          }
+        }
+
         final payload = DownloadRequestPayload(
           isrc: trackToDownload.isrc ?? '',
           service: item.service,
-          spotifyId: trackToDownload.id,
+          spotifyId: payloadSpotifyId,
           trackName: trackToDownload.name,
           artistName: trackToDownload.artistName,
           albumName: trackToDownload.albumName,
@@ -3581,6 +3918,8 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
           genre: genre ?? '',
           label: label ?? '',
           copyright: copyright ?? '',
+          qobuzId: payloadQobuzId,
+          tidalId: payloadTidalId,
           deezerId: deezerTrackId ?? '',
           lyricsMode: settings.lyricsMode,
           storageMode: storageMode,
@@ -3598,8 +3937,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         );
       }
 
-      if (_isLocallyCancelled(item.id)) {
-        _log.i('Download was cancelled before native download start, skipping');
+      if (shouldAbortWork('before native download start')) {
         return;
       }
 
@@ -3621,10 +3959,12 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
           settings.folderOrganization,
           separateSingles: settings.separateSingles,
           albumFolderStructure: settings.albumFolderStructure,
+          createPlaylistFolder: settings.createPlaylistFolder,
           useAlbumArtistForFolders: settings.useAlbumArtistForFolders,
           usePrimaryArtistOnly: settings.usePrimaryArtistOnly,
           filterContributingArtistsInAlbumArtist:
               settings.filterContributingArtistsInAlbumArtist,
+          playlistName: item.playlistName,
         );
         final fallbackResult = await runDownload(
           useSaf: false,
@@ -3641,16 +3981,26 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       _log.d('Result: $result');
 
       final itemAfterResult = _findItemById(item.id);
-      final cancelledAfterResult =
-          itemAfterResult == null ||
-          _isLocallyCancelled(item.id, item: itemAfterResult);
-      if (cancelledAfterResult) {
+      if (itemAfterResult == null ||
+          _isLocallyCancelled(item.id, item: itemAfterResult)) {
         _log.i('Download was cancelled, skipping result processing');
         final filePath = result['file_path'] as String?;
         if (filePath != null && result['success'] == true) {
           await deleteFile(filePath);
           _log.d('Deleted cancelled download file: $filePath');
         }
+        return;
+      }
+
+      if (_isPausePending(item.id)) {
+        pausedDuringThisRun = true;
+        final filePath = result['file_path'] as String?;
+        if (filePath != null && result['success'] == true) {
+          await deleteFile(filePath);
+          _log.d('Deleted paused download file: $filePath');
+        }
+        _requeueItemForPause(item.id);
+        _log.i('Download pause requested after result, re-queueing');
         return;
       }
 
@@ -3691,6 +4041,14 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
             item.service.toLowerCase();
         final decryptionKey =
             (result['decryption_key'] as String?)?.trim() ?? '';
+        trackToDownload = _buildTrackForMetadataEmbedding(
+          trackToDownload,
+          result,
+          resolvedAlbumArtist,
+        );
+        _log.d(
+          'Track coverUrl after download result: ${trackToDownload.coverUrl}',
+        );
 
         if (!wasExisting && decryptionKey.isNotEmpty && filePath != null) {
           _log.i('Encrypted stream detected, decrypting via FFmpeg...');
@@ -3814,7 +4172,6 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
             isContentUriPath &&
             effectiveSafMode &&
             actualService == 'tidal' &&
-            quality != 'HIGH' &&
             filePath.endsWith('.flac') &&
             (mimeType == null || mimeType.contains('flac'));
 
@@ -3924,7 +4281,6 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   _log.w('SAF M4A conversion failed: $e');
                   actualQuality = 'AAC 320kbps';
                 } finally {
-                  // Clean up temp files
                   try {
                     await File(tempPath).delete();
                   } catch (_) {}
@@ -4002,7 +4358,6 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                 } catch (e) {
                   _log.w('SAF M4A->FLAC conversion failed: $e');
                 } finally {
-                  // Clean up temp files
                   try {
                     await File(tempPath).delete();
                   } catch (_) {}
@@ -4378,6 +4733,19 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
           return;
         }
 
+        if (_isPausePending(item.id)) {
+          pausedDuringThisRun = true;
+          if (filePath != null) {
+            await deleteFile(filePath);
+            _log.d(
+              'Deleted paused download file during finalization: $filePath',
+            );
+          }
+          _requeueItemForPause(item.id);
+          _log.i('Download pause requested during finalization, re-queueing');
+          return;
+        }
+
         // SAF downloads should end with content URI. If we still have a
         // transient FD path, recover URI from SAF metadata to keep history
         // dedup/exclusion stable.
@@ -4599,7 +4967,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                       ? backendAlbum
                       : trackToDownload.albumName,
                   albumArtist: historyAlbumArtist,
-                  coverUrl: trackToDownload.coverUrl,
+                  coverUrl: normalizeCoverReference(trackToDownload.coverUrl),
                   filePath: filePath,
                   storageMode: effectiveSafMode ? 'saf' : 'app',
                   downloadTreeUri: effectiveSafMode
@@ -4645,11 +5013,26 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
           return;
         }
 
+        if (_isPausePending(item.id)) {
+          pausedDuringThisRun = true;
+          _requeueItemForPause(item.id);
+          _log.i('Download pause requested after backend failure, re-queueing');
+          return;
+        }
+
         final errorMsg = result['error'] as String? ?? 'Download failed';
         final errorTypeStr = result['error_type'] as String? ?? 'unknown';
         if (errorTypeStr == 'cancelled') {
-          _log.i('Download was cancelled by backend, skipping error handling');
-          updateItemStatus(item.id, DownloadStatus.skipped);
+          if (_isPausePending(item.id)) {
+            pausedDuringThisRun = true;
+            _requeueItemForPause(item.id);
+            _log.i('Download was paused by backend cancellation, re-queueing');
+          } else {
+            _log.i(
+              'Download was cancelled by backend, skipping error handling',
+            );
+            updateItemStatus(item.id, DownloadStatus.skipped);
+          }
           return;
         }
 
@@ -4708,6 +5091,13 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         return;
       }
 
+      if (_isPausePending(item.id)) {
+        pausedDuringThisRun = true;
+        _requeueItemForPause(item.id);
+        _log.i('Download pause requested after exception, re-queueing');
+        return;
+      }
+
       _log.e('Exception: $e', e, stackTrace);
 
       String errorMsg = e.toString();
@@ -4732,6 +5122,10 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         await PlatformBridge.cleanupConnections();
       } catch (cleanupErr) {
         _log.e('Post-exception connection cleanup failed: $cleanupErr');
+      }
+    } finally {
+      if (pausedDuringThisRun) {
+        _pausePendingItemIds.remove(item.id);
       }
     }
   }

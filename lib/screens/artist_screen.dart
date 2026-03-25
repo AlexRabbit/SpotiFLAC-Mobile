@@ -14,6 +14,7 @@ import 'package:spotiflac_android/providers/local_library_provider.dart';
 import 'package:spotiflac_android/providers/playback_provider.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
 import 'package:spotiflac_android/utils/file_access.dart';
+import 'package:spotiflac_android/utils/string_utils.dart';
 import 'package:spotiflac_android/screens/album_screen.dart';
 import 'package:spotiflac_android/screens/home_tab.dart'
     show ExtensionAlbumScreen;
@@ -38,12 +39,14 @@ class _ArtistCache {
   static void set(
     String artistId, {
     required List<ArtistAlbum> albums,
+    List<ArtistAlbum>? releases,
     List<Track>? topTracks,
     String? headerImageUrl,
     int? monthlyListeners,
   }) {
     _cache[artistId] = _CacheEntry(
       albums: albums,
+      releases: releases,
       topTracks: topTracks,
       headerImageUrl: headerImageUrl,
       monthlyListeners: monthlyListeners,
@@ -54,6 +57,7 @@ class _ArtistCache {
 
 class _CacheEntry {
   final List<ArtistAlbum> albums;
+  final List<ArtistAlbum>? releases;
   final List<Track>? topTracks;
   final String? headerImageUrl;
   final int? monthlyListeners;
@@ -61,6 +65,7 @@ class _CacheEntry {
 
   _CacheEntry({
     required this.albums,
+    this.releases,
     this.topTracks,
     this.headerImageUrl,
     this.monthlyListeners,
@@ -97,6 +102,7 @@ class ArtistScreen extends ConsumerStatefulWidget {
 class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   bool _isLoadingDiscography = false;
   List<ArtistAlbum>? _albums;
+  List<ArtistAlbum>? _releases;
   List<Track>? _topTracks;
   String? _headerImageUrl;
   int? _monthlyListeners;
@@ -104,6 +110,8 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
 
   bool _showTitleInAppBar = false;
   final ScrollController _scrollController = ScrollController();
+  final PageController _popularPageController = PageController();
+  int _popularCurrentPage = 0;
 
   bool _isSelectionMode = false;
   final Set<String> _selectedAlbumIds = {};
@@ -153,7 +161,12 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final providerId =
           widget.extensionId ??
-          (widget.artistId.startsWith('deezer:') ? 'deezer' : 'spotify');
+          (() {
+            if (widget.artistId.startsWith('deezer:')) return 'deezer';
+            if (widget.artistId.startsWith('qobuz:')) return 'qobuz';
+            if (widget.artistId.startsWith('tidal:')) return 'tidal';
+            return 'spotify';
+          })();
       ref
           .read(recentAccessProvider.notifier)
           .recordArtistAccess(
@@ -169,6 +182,11 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       _topTracks = widget.topTracks;
       _headerImageUrl = widget.headerImageUrl;
       _monthlyListeners = widget.monthlyListeners;
+
+      if ((_albums == null || _albums!.isEmpty) ||
+          (_topTracks == null || _topTracks!.isEmpty)) {
+        _fetchDiscography();
+      }
       return;
     }
 
@@ -185,6 +203,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       }
     } else if (cached != null) {
       _albums = cached.albums;
+      _releases = cached.releases;
       _topTracks = cached.topTracks;
       _headerImageUrl = cached.headerImageUrl;
       _monthlyListeners = cached.monthlyListeners;
@@ -209,6 +228,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _popularPageController.dispose();
     super.dispose();
   }
 
@@ -216,6 +236,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     setState(() => _isLoadingDiscography = true);
     try {
       List<ArtistAlbum> albums;
+      List<ArtistAlbum>? releases;
       List<Track>? topTracks;
       String? headerImage;
       int? listeners;
@@ -230,6 +251,65 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
         albums = albumsList
             .map((a) => _parseArtistAlbum(a as Map<String, dynamic>))
             .toList();
+      } else if (widget.artistId.startsWith('qobuz:')) {
+        final qobuzArtistId = widget.artistId.replaceFirst('qobuz:', '');
+        final metadata = await PlatformBridge.getQobuzMetadata(
+          'artist',
+          qobuzArtistId,
+        );
+        final albumsList = metadata['albums'] as List<dynamic>;
+        albums = albumsList
+            .map((a) => _parseArtistAlbum(a as Map<String, dynamic>))
+            .toList();
+        final artistInfo = metadata['artist_info'] as Map<String, dynamic>?;
+        headerImage = artistInfo?['images'] as String?;
+      } else if (widget.artistId.startsWith('tidal:')) {
+        final tidalArtistId = widget.artistId.replaceFirst('tidal:', '');
+        final metadata = await PlatformBridge.getTidalMetadata(
+          'artist',
+          tidalArtistId,
+        );
+        final albumsList = metadata['albums'] as List<dynamic>;
+        albums = albumsList
+            .map((a) => _parseArtistAlbum(a as Map<String, dynamic>))
+            .toList();
+        final artistInfo = metadata['artist_info'] as Map<String, dynamic>?;
+        headerImage = artistInfo?['images'] as String?;
+      } else if (widget.extensionId != null && widget.extensionId!.isNotEmpty) {
+        final result = await PlatformBridge.getArtistWithExtension(
+          widget.extensionId!,
+          widget.artistId,
+        );
+
+        if (result == null) {
+          throw Exception('Failed to load artist from extension');
+        }
+
+        final artistData = result;
+        final albumsList = artistData['albums'] as List<dynamic>? ?? [];
+        albums = albumsList
+            .map((a) => _parseArtistAlbum(a as Map<String, dynamic>))
+            .toList();
+
+        final releasesList = artistData['releases'] as List<dynamic>? ?? [];
+        if (releasesList.isNotEmpty) {
+          releases = releasesList
+              .map((a) => _parseArtistAlbum(a as Map<String, dynamic>))
+              .toList();
+        }
+
+        final topTracksList = artistData['top_tracks'] as List<dynamic>? ?? [];
+        if (topTracksList.isNotEmpty) {
+          topTracks = topTracksList
+              .map((t) => _parseTrack(t as Map<String, dynamic>))
+              .toList();
+        }
+
+        headerImage =
+            artistData['header_image'] as String? ??
+            artistData['cover_url'] as String? ??
+            artistData['image_url'] as String?;
+        listeners = artistData['listeners'] as int?;
       } else {
         final url = 'https://open.spotify.com/artist/${widget.artistId}';
         final result = await PlatformBridge.handleURLWithExtension(url);
@@ -270,6 +350,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       _ArtistCache.set(
         widget.artistId,
         albums: albums,
+        releases: releases,
         topTracks: topTracks,
         headerImageUrl: finalHeaderImage,
         monthlyListeners: finalListeners,
@@ -278,6 +359,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       if (mounted) {
         setState(() {
           _albums = albums;
+          _releases = releases;
           _topTracks = topTracks;
           _headerImageUrl = finalHeaderImage;
           _monthlyListeners = finalListeners;
@@ -294,7 +376,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     }
   }
 
-  Track _parseTrack(Map<String, dynamic> data) {
+  Track _parseTrack(Map<String, dynamic> data, {ArtistAlbum? album}) {
     int durationMs = 0;
     final durationValue = data['duration_ms'];
     if (durationValue is int) {
@@ -303,36 +385,52 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       durationMs = durationValue.toInt();
     }
 
+    final spotifyId = (data['spotify_id'] ?? '').toString();
+    final nativeId = (data['id'] ?? '').toString();
+
     return Track(
-      id: (data['spotify_id'] ?? data['id'] ?? '').toString(),
+      id: spotifyId.isNotEmpty ? spotifyId : nativeId,
       name: (data['name'] ?? '').toString(),
       artistName: (data['artists'] ?? data['artist'] ?? '').toString(),
-      albumName: (data['album_name'] ?? data['album'] ?? '').toString(),
-      albumArtist: data['album_artist']?.toString(),
+      albumName: (data['album_name'] ?? data['album'] ?? album?.name ?? '')
+          .toString(),
+      albumArtist: data['album_artist']?.toString() ?? widget.artistName,
       artistId:
           (data['artist_id'] ?? data['artistId'])?.toString() ??
           widget.artistId,
-      albumId: data['album_id']?.toString(),
-      coverUrl: (data['cover_url'] ?? data['images'])?.toString(),
+      albumId: data['album_id']?.toString() ?? album?.id,
+      coverUrl: normalizeCoverReference(
+        (data['cover_url'] ?? data['images'] ?? album?.coverUrl)?.toString(),
+      ),
       isrc: data['isrc']?.toString(),
       duration: (durationMs / 1000).round(),
       trackNumber: data['track_number'] as int?,
       discNumber: data['disc_number'] as int?,
       releaseDate: data['release_date']?.toString(),
-      source: data['provider_id']?.toString(),
+      albumType: data['album_type']?.toString() ?? album?.albumType,
+      totalTracks: data['total_tracks'] as int? ?? album?.totalTracks,
+      source: data['provider_id']?.toString() ?? widget.extensionId,
     );
   }
 
   ArtistAlbum _parseArtistAlbum(Map<String, dynamic> data) {
+    final totalTracksValue = data['total_tracks'];
+    final totalTracks = totalTracksValue is int
+        ? totalTracksValue
+        : int.tryParse(totalTracksValue?.toString() ?? '') ?? 0;
+
     return ArtistAlbum(
       id: data['id'] as String? ?? '',
-      name: data['name'] as String? ?? '',
-      releaseDate: data['release_date'] as String? ?? '',
-      totalTracks: data['total_tracks'] as int? ?? 0,
-      coverUrl: (data['cover_url'] ?? data['images'])?.toString(),
-      albumType: data['album_type'] as String? ?? 'album',
-      artists: data['artists'] as String? ?? '',
-      providerId: data['provider_id']?.toString(),
+      name: (data['name'] ?? data['title'] ?? '').toString(),
+      releaseDate: (data['release_date'] ?? '').toString(),
+      totalTracks: totalTracks,
+      coverUrl: normalizeCoverReference(
+        (data['cover_url'] ?? data['images'] ?? data['cover_art'])?.toString(),
+      ),
+      albumType: (data['album_type'] ?? data['type'] ?? 'album').toString(),
+      artists: (data['artists'] ?? data['artist'] ?? widget.artistName)
+          .toString(),
+      providerId: data['provider_id']?.toString() ?? widget.extensionId,
     );
   }
 
@@ -343,7 +441,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
         .where((a) => a.albumType == 'album')
         .toList(growable: false);
     _singlesBucket = albums
-        .where((a) => a.albumType == 'single')
+        .where((a) => a.albumType == 'single' || a.albumType == 'ep')
         .toList(growable: false);
     _compilationsBucket = albums
         .where((a) => a.albumType == 'compilation')
@@ -355,6 +453,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final albums = _albums ?? [];
     _ensureAlbumBuckets(albums);
+    final releases = _releases ?? const <ArtistAlbum>[];
     final albumsOnly = _albumsOnlyBucket;
     final singles = _singlesBucket;
     final compilations = _compilationsBucket;
@@ -400,6 +499,14 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                     SliverToBoxAdapter(
                       child: _buildPopularSection(colorScheme),
                     ),
+                  if (releases.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: _buildAlbumSection(
+                        'Releases',
+                        releases,
+                        colorScheme,
+                      ),
+                    ),
                   if (albumsOnly.isNotEmpty)
                     SliverToBoxAdapter(
                       child: _buildAlbumSection(
@@ -414,6 +521,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                         context.l10n.artistSingles,
                         singles,
                         colorScheme,
+                        showTypeBadge: true,
                       ),
                     ),
                   if (compilations.isNotEmpty)
@@ -668,7 +776,9 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     List<ArtistAlbum> albums,
   ) {
     final albumsOnly = albums.where((a) => a.albumType == 'album').toList();
-    final singles = albums.where((a) => a.albumType == 'single').toList();
+    final singles = albums
+        .where((a) => a.albumType == 'single' || a.albumType == 'ep')
+        .toList();
 
     final totalTracks = albums.fold<int>(0, (sum, a) => sum + a.totalTracks);
     final albumTracks = albumsOnly.fold<int>(
@@ -939,7 +1049,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       if (result != null && result['tracks'] != null) {
         final tracksList = result['tracks'] as List<dynamic>;
         return tracksList
-            .map((t) => _parseTrack(t as Map<String, dynamic>))
+            .map((t) => _parseTrack(t as Map<String, dynamic>, album: album))
             .toList();
       }
     } else if (album.id.startsWith('deezer:')) {
@@ -954,13 +1064,31 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
             .map((t) => _parseTrackFromDeezer(t as Map<String, dynamic>, album))
             .toList();
       }
+    } else if (album.id.startsWith('qobuz:')) {
+      final qobuzId = album.id.replaceFirst('qobuz:', '');
+      final metadata = await PlatformBridge.getQobuzMetadata('album', qobuzId);
+      if (metadata['track_list'] != null) {
+        final tracksList = metadata['track_list'] as List<dynamic>;
+        return tracksList
+            .map((t) => _parseTrack(t as Map<String, dynamic>, album: album))
+            .toList();
+      }
+    } else if (album.id.startsWith('tidal:')) {
+      final tidalId = album.id.replaceFirst('tidal:', '');
+      final metadata = await PlatformBridge.getTidalMetadata('album', tidalId);
+      if (metadata['track_list'] != null) {
+        final tracksList = metadata['track_list'] as List<dynamic>;
+        return tracksList
+            .map((t) => _parseTrack(t as Map<String, dynamic>, album: album))
+            .toList();
+      }
     } else {
       final url = 'https://open.spotify.com/album/${album.id}';
       final result = await PlatformBridge.handleURLWithExtension(url);
       if (result != null && result['tracks'] != null) {
         final tracksList = result['tracks'] as List<dynamic>;
         return tracksList
-            .map((t) => _parseTrack(t as Map<String, dynamic>))
+            .map((t) => _parseTrack(t as Map<String, dynamic>, album: album))
             .toList();
       }
 
@@ -969,7 +1097,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       if (metadata['tracks'] != null) {
         final tracksList = metadata['tracks'] as List<dynamic>;
         return tracksList
-            .map((t) => _parseTrack(t as Map<String, dynamic>))
+            .map((t) => _parseTrack(t as Map<String, dynamic>, album: album))
             .toList();
       }
     }
@@ -1003,6 +1131,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       discNumber: data['disk_number'] as int? ?? data['disc_number'] as int?,
       releaseDate: album.releaseDate,
       albumType: album.albumType,
+      totalTracks: album.totalTracks,
     );
   }
 
@@ -1203,7 +1332,9 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       return const SizedBox.shrink();
     }
 
-    final tracks = _topTracks!.take(5).toList();
+    final tracks = _topTracks!;
+    const tracksPerPage = 5;
+    final pageCount = (tracks.length / tracksPerPage).ceil();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1217,11 +1348,60 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
-        ...tracks.asMap().entries.map((entry) {
-          final index = entry.key;
-          final track = entry.value;
-          return _buildPopularTrackItem(index + 1, track, colorScheme);
-        }),
+        SizedBox(
+          height: tracksPerPage * 64.0,
+          child: PageView.builder(
+            controller: _popularPageController,
+            itemCount: pageCount,
+            onPageChanged: (page) {
+              setState(() {
+                _popularCurrentPage = page;
+              });
+            },
+            itemBuilder: (context, pageIndex) {
+              final startIndex = pageIndex * tracksPerPage;
+              final endIndex = (startIndex + tracksPerPage).clamp(
+                0,
+                tracks.length,
+              );
+              final pageTracks = tracks.sublist(startIndex, endIndex);
+
+              return Column(
+                children: pageTracks.asMap().entries.map((entry) {
+                  final globalIndex = startIndex + entry.key;
+                  return _buildPopularTrackItem(
+                    globalIndex + 1,
+                    entry.value,
+                    colorScheme,
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ),
+        if (pageCount > 1)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(pageCount, (index) {
+                  final isActive = _popularCurrentPage == index;
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: isActive ? 8 : 6,
+                    height: isActive ? 8 : 6,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isActive
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1523,8 +1703,9 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
   Widget _buildAlbumSection(
     String title,
     List<ArtistAlbum> albums,
-    ColorScheme colorScheme,
-  ) {
+    ColorScheme colorScheme, {
+    bool showTypeBadge = false,
+  }) {
     final sectionHeight = _artistAlbumSectionHeight();
     final tileSize = _artistAlbumTileSize();
 
@@ -1555,6 +1736,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                   colorScheme,
                   tileSize: tileSize,
                   sectionHeight: sectionHeight,
+                  showTypeBadge: showTypeBadge,
                 ),
               );
             },
@@ -1569,6 +1751,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     ColorScheme colorScheme, {
     required double tileSize,
     required double sectionHeight,
+    bool showTypeBadge = false,
   }) {
     final isSelected = _selectedAlbumIds.contains(album.id);
 
@@ -1679,6 +1862,29 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                                 size: 18,
                               )
                             : null,
+                      ),
+                    ),
+                  if (showTypeBadge)
+                    Positioned(
+                      left: 6,
+                      bottom: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          album.albumType == 'ep' ? 'EP' : 'Single',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                 ],

@@ -234,7 +234,7 @@ class AboutPage extends StatelessWidget {
                     icon: Icons.info_outline,
                     title: context.l10n.aboutVersion,
                     subtitle:
-                        'v${AppInfo.version} (build ${AppInfo.buildNumber})',
+                        'v${AppInfo.displayVersion} (build ${AppInfo.buildNumber})',
                     showDivider: false,
                   ),
                 ],
@@ -341,7 +341,7 @@ class _AppHeaderCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  'v${AppInfo.version}',
+                  'v${AppInfo.displayVersion}',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: colorScheme.onSecondaryContainer,
                     fontWeight: FontWeight.w600,
@@ -510,6 +510,30 @@ class _TranslatorsSection extends StatelessWidget {
       crowdinUsername: 'ot_inc',
       language: 'Japanese',
       flag: '🇯🇵',
+    ),
+    _Translator(
+      name: 'unkn0wn',
+      crowdinUsername: 'rdclvi',
+      language: 'Indonesian',
+      flag: '🇮🇩',
+    ),
+    _Translator(
+      name: 'lunching1272',
+      crowdinUsername: 'lunching1272',
+      language: 'Chinese Simplified',
+      flag: '🇨🇳',
+    ),
+    _Translator(
+      name: 'Сергей Ильченко',
+      crowdinUsername: 'Sega_Mostky',
+      language: 'Russian',
+      flag: '🇷🇺',
+    ),
+    _Translator(
+      name: 'Girl-lass',
+      crowdinUsername: 'Girl-lass',
+      language: 'Chinese Simplified',
+      flag: '🇨🇳',
     ),
     _Translator(
       name: 'Kaan',

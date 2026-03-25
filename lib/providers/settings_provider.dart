@@ -1,20 +1,22 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:spotiflac_android/models/settings.dart';
 import 'package:spotiflac_android/constants/app_info.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
+import 'package:spotiflac_android/utils/file_access.dart';
 import 'package:spotiflac_android/utils/logger.dart';
 
 const _settingsKey = 'app_settings';
 const _migrationVersionKey = 'settings_migration_version';
-const _currentMigrationVersion = 4;
+const _currentMigrationVersion = 6;
 const _spotifyClientSecretKey = 'spotify_client_secret';
 final _log = AppLogger('SettingsProvider');
 
 class SettingsNotifier extends Notifier<AppSettings> {
-  static const List<int> _youtubeOpusSupportedBitrates = [128, 256];
+  static const List<int> _youtubeOpusSupportedBitrates = [128, 256, 320];
   static const List<int> _youtubeMp3SupportedBitrates = [128, 256, 320];
   static final RegExp _isoRegionPattern = RegExp(r'^[A-Z]{2}$');
 
@@ -37,13 +39,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
       state = AppSettings.fromJson(jsonDecode(json));
 
       await _runMigrations(prefs);
+      await _normalizeIosDownloadDirectoryIfNeeded();
       await _normalizeYouTubeBitratesIfNeeded();
       await _normalizeSongLinkRegionIfNeeded();
     }
 
-    await _loadSpotifyClientSecret(prefs);
-
-    _applySpotifyCredentials();
+    await _retireBuiltInSpotifyProvider();
 
     LogBuffer.loggingEnabled = state.enableLogging;
 
@@ -52,6 +53,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
   }
 
   void _syncLyricsSettingsToBackend() {
+    if (!PlatformBridge.supportsCoreBackend) return;
+
     PlatformBridge.setLyricsProviders(state.lyricsProviders).catchError((e) {
       _log.w('Failed to sync lyrics providers to backend: $e');
     });
@@ -67,6 +70,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
   }
 
   void _syncNetworkCompatibilitySettingsToBackend() {
+    if (!PlatformBridge.supportsCoreBackend) return;
+
     final compatibilityMode = state.networkCompatibilityMode;
     PlatformBridge.setNetworkCompatibilityOptions(
       allowHttp: compatibilityMode,
@@ -104,6 +109,17 @@ class SettingsNotifier extends Notifier<AppSettings> {
           updatedProviders.add('spotify_api');
         }
         state = state.copyWith(lyricsProviders: updatedProviders);
+      }
+      if (state.metadataSource != 'deezer' ||
+          state.spotifyClientId.isNotEmpty ||
+          state.spotifyClientSecret.isNotEmpty ||
+          state.useCustomSpotifyCredentials) {
+        state = state.copyWith(
+          metadataSource: 'deezer',
+          spotifyClientId: '',
+          spotifyClientSecret: '',
+          useCustomSpotifyCredentials: false,
+        );
       }
       state = state.copyWith(lastSeenVersion: AppInfo.version);
       await prefs.setInt(_migrationVersionKey, _currentMigrationVersion);
@@ -180,6 +196,20 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await _saveSettings();
   }
 
+  Future<void> _normalizeIosDownloadDirectoryIfNeeded() async {
+    if (!Platform.isIOS) return;
+
+    final currentDir = state.downloadDirectory.trim();
+    if (currentDir.isEmpty) return;
+
+    final normalizedDir = await validateOrFixIosPath(currentDir);
+    if (normalizedDir == currentDir) return;
+
+    _log.i('Normalized iOS download directory: $currentDir -> $normalizedDir');
+    state = state.copyWith(downloadDirectory: normalizedDir);
+    await _saveSettings();
+  }
+
   String _normalizeSongLinkRegion(String region) {
     final normalized = region.trim().toUpperCase();
     if (_isoRegionPattern.hasMatch(normalized)) return normalized;
@@ -193,49 +223,28 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await _saveSettings();
   }
 
-  Future<void> _loadSpotifyClientSecret(SharedPreferences prefs) async {
+  Future<void> _retireBuiltInSpotifyProvider() async {
     final storedSecret = await _secureStorage.read(
       key: _spotifyClientSecretKey,
     );
-    final prefsSecret = state.spotifyClientSecret;
-
-    if ((storedSecret == null || storedSecret.isEmpty) &&
-        prefsSecret.isNotEmpty) {
-      await _secureStorage.write(
-        key: _spotifyClientSecretKey,
-        value: prefsSecret,
-      );
-    }
-
-    final effectiveSecret = (storedSecret != null && storedSecret.isNotEmpty)
-        ? storedSecret
-        : (prefsSecret.isNotEmpty ? prefsSecret : '');
-
-    if (effectiveSecret != state.spotifyClientSecret) {
-      state = state.copyWith(spotifyClientSecret: effectiveSecret);
-    }
-
-    if (prefsSecret.isNotEmpty) {
-      await _saveSettings();
-    }
-  }
-
-  Future<void> _storeSpotifyClientSecret(String secret) async {
-    if (secret.isEmpty) {
+    if (storedSecret != null && storedSecret.isNotEmpty) {
       await _secureStorage.delete(key: _spotifyClientSecretKey);
-    } else {
-      await _secureStorage.write(key: _spotifyClientSecretKey, value: secret);
     }
-  }
 
-  Future<void> _applySpotifyCredentials() async {
-    if (state.spotifyClientId.isNotEmpty &&
-        state.spotifyClientSecret.isNotEmpty) {
-      await PlatformBridge.setSpotifyCredentials(
-        state.spotifyClientId,
-        state.spotifyClientSecret,
-      );
+    if (state.metadataSource == 'deezer' &&
+        state.spotifyClientId.isEmpty &&
+        state.spotifyClientSecret.isEmpty &&
+        !state.useCustomSpotifyCredentials) {
+      return;
     }
+
+    state = state.copyWith(
+      metadataSource: 'deezer',
+      spotifyClientId: '',
+      spotifyClientSecret: '',
+      useCustomSpotifyCredentials: false,
+    );
+    await _saveSettings();
   }
 
   void setDefaultService(String service) {
@@ -366,6 +375,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     _saveSettings();
   }
 
+  void setCreatePlaylistFolder(bool enabled) {
+    state = state.copyWith(createPlaylistFolder: enabled);
+    _saveSettings();
+  }
+
   void setUseAlbumArtistForFolders(bool enabled) {
     state = state.copyWith(useAlbumArtistForFolders: enabled);
     _saveSettings();
@@ -396,43 +410,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
     _saveSettings();
   }
 
-  void setSpotifyClientId(String clientId) {
-    state = state.copyWith(spotifyClientId: clientId);
-    _saveSettings();
-  }
-
-  Future<void> setSpotifyClientSecret(String clientSecret) async {
-    state = state.copyWith(spotifyClientSecret: clientSecret);
-    await _storeSpotifyClientSecret(clientSecret);
-    _saveSettings();
-  }
-
-  Future<void> setSpotifyCredentials(
-    String clientId,
-    String clientSecret,
-  ) async {
-    state = state.copyWith(
-      spotifyClientId: clientId,
-      spotifyClientSecret: clientSecret,
-    );
-    await _storeSpotifyClientSecret(clientSecret);
-    _saveSettings();
-    _applySpotifyCredentials();
-  }
-
-  Future<void> clearSpotifyCredentials() async {
-    state = state.copyWith(spotifyClientId: '', spotifyClientSecret: '');
-    await _storeSpotifyClientSecret('');
-    _saveSettings();
-    _applySpotifyCredentials();
-  }
-
-  void setUseCustomSpotifyCredentials(bool enabled) {
-    state = state.copyWith(useCustomSpotifyCredentials: enabled);
-    _saveSettings();
-    _applySpotifyCredentials();
-  }
-
   void setMetadataSource(String source) {
     state = state.copyWith(metadataSource: source);
     _saveSettings();
@@ -443,6 +420,15 @@ class SettingsNotifier extends Notifier<AppSettings> {
       state = state.copyWith(clearSearchProvider: true);
     } else {
       state = state.copyWith(searchProvider: provider);
+    }
+    _saveSettings();
+  }
+
+  void setHomeFeedProvider(String? provider) {
+    if (provider == null || provider.isEmpty) {
+      state = state.copyWith(clearHomeFeedProvider: true);
+    } else {
+      state = state.copyWith(homeFeedProvider: provider);
     }
     _saveSettings();
   }
@@ -547,6 +533,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   void setLocalLibraryShowDuplicates(bool show) {
     state = state.copyWith(localLibraryShowDuplicates: show);
+    _saveSettings();
+  }
+
+  void setLocalLibraryAutoScan(String mode) {
+    state = state.copyWith(localLibraryAutoScan: mode);
     _saveSettings();
   }
 

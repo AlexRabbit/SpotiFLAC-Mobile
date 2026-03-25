@@ -70,6 +70,7 @@ type ExtArtistMetadata struct {
 	HeaderImage string             `json:"header_image,omitempty"`
 	Listeners   int                `json:"listeners,omitempty"`
 	Albums      []ExtAlbumMetadata `json:"albums,omitempty"`
+	Releases    []ExtAlbumMetadata `json:"releases,omitempty"`
 	TopTracks   []ExtTrackMetadata `json:"top_tracks,omitempty"`
 	ProviderID  string             `json:"provider_id"`
 }
@@ -327,6 +328,12 @@ func (p *ExtensionProviderWrapper) GetArtist(artistID string) (*ExtArtistMetadat
 	}
 
 	artist.ProviderID = p.extension.ID
+	for i := range artist.Releases {
+		artist.Releases[i].ProviderID = p.extension.ID
+		for j := range artist.Releases[i].Tracks {
+			artist.Releases[i].Tracks[j].ProviderID = p.extension.ID
+		}
+	}
 	return &artist, nil
 }
 
@@ -484,7 +491,7 @@ func (p *ExtensionProviderWrapper) GetDownloadURL(trackID, quality string) (*Ext
 	return &urlResult, nil
 }
 
-const ExtDownloadTimeout = 5 * time.Minute
+const ExtDownloadTimeout = DownloadTimeout
 
 func (p *ExtensionProviderWrapper) Download(trackID, quality, outputPath string, onProgress func(percent int)) (*ExtDownloadResult, error) {
 	if !p.extension.Manifest.IsDownloadProvider() {
@@ -600,8 +607,30 @@ func (m *ExtensionManager) SearchTracksWithExtensions(query string, limit int) (
 		return nil, nil
 	}
 
-	var allTracks []ExtTrackMetadata
+	providerByID := make(map[string]*ExtensionProviderWrapper, len(providers))
+	orderedProviders := make([]*ExtensionProviderWrapper, 0, len(providers))
 	for _, provider := range providers {
+		providerByID[provider.extension.ID] = provider
+	}
+	for _, providerID := range GetMetadataProviderPriority() {
+		if provider := providerByID[providerID]; provider != nil {
+			orderedProviders = append(orderedProviders, provider)
+			delete(providerByID, providerID)
+		}
+	}
+	if len(providerByID) > 0 {
+		remainingIDs := make([]string, 0, len(providerByID))
+		for providerID := range providerByID {
+			remainingIDs = append(remainingIDs, providerID)
+		}
+		sort.Strings(remainingIDs)
+		for _, providerID := range remainingIDs {
+			orderedProviders = append(orderedProviders, providerByID[providerID])
+		}
+	}
+
+	var allTracks []ExtTrackMetadata
+	for _, provider := range orderedProviders {
 		result, err := provider.SearchTracks(query, limit)
 		if err != nil {
 			GoLog("[Extension] Search error from %s: %v\n", provider.extension.ID, err)
@@ -620,6 +649,8 @@ var providerPriorityMu sync.RWMutex
 
 var metadataProviderPriority []string
 var metadataProviderPriorityMu sync.RWMutex
+
+var searchBuiltInMetadataTracksFunc = searchBuiltInMetadataTracks
 
 func SetProviderPriority(providerIDs []string) {
 	providerPriorityMu.Lock()
@@ -644,8 +675,30 @@ func GetProviderPriority() []string {
 func SetMetadataProviderPriority(providerIDs []string) {
 	metadataProviderPriorityMu.Lock()
 	defer metadataProviderPriorityMu.Unlock()
-	metadataProviderPriority = providerIDs
-	GoLog("[Extension] Metadata provider priority set: %v\n", providerIDs)
+
+	sanitized := make([]string, 0, len(providerIDs)+3)
+	seen := map[string]struct{}{}
+	for _, providerID := range providerIDs {
+		providerID = strings.TrimSpace(providerID)
+		if providerID == "" || providerID == "spotify" {
+			continue
+		}
+		if _, exists := seen[providerID]; exists {
+			continue
+		}
+		seen[providerID] = struct{}{}
+		sanitized = append(sanitized, providerID)
+	}
+	for _, providerID := range []string{"deezer", "qobuz", "tidal"} {
+		if _, exists := seen[providerID]; exists {
+			continue
+		}
+		seen[providerID] = struct{}{}
+		sanitized = append(sanitized, providerID)
+	}
+
+	metadataProviderPriority = sanitized
+	GoLog("[Extension] Metadata provider priority set: %v\n", sanitized)
 }
 
 func GetMetadataProviderPriority() []string {
@@ -653,7 +706,7 @@ func GetMetadataProviderPriority() []string {
 	defer metadataProviderPriorityMu.RUnlock()
 
 	if len(metadataProviderPriority) == 0 {
-		return []string{"deezer", "spotify"}
+		return []string{"deezer", "qobuz", "tidal"}
 	}
 
 	result := make([]string, len(metadataProviderPriority))
@@ -668,6 +721,165 @@ func isBuiltInProvider(providerID string) bool {
 	default:
 		return false
 	}
+}
+
+func normalizeBuiltInMetadataTrack(track TrackMetadata, providerID string) ExtTrackMetadata {
+	deezerID := ""
+	tidalID := ""
+	qobuzID := ""
+	prefixedID := strings.TrimSpace(track.SpotifyID)
+
+	switch providerID {
+	case "deezer":
+		deezerID = strings.TrimPrefix(prefixedID, "deezer:")
+	case "tidal":
+		tidalID = strings.TrimPrefix(prefixedID, "tidal:")
+	case "qobuz":
+		qobuzID = strings.TrimPrefix(prefixedID, "qobuz:")
+	}
+
+	return ExtTrackMetadata{
+		ID:          prefixedID,
+		Name:        track.Name,
+		Artists:     track.Artists,
+		AlbumName:   track.AlbumName,
+		AlbumArtist: track.AlbumArtist,
+		DurationMS:  track.DurationMS,
+		CoverURL:    track.Images,
+		Images:      track.Images,
+		ReleaseDate: track.ReleaseDate,
+		TrackNumber: track.TrackNumber,
+		DiscNumber:  track.DiscNumber,
+		ISRC:        track.ISRC,
+		ProviderID:  providerID,
+		SpotifyID:   prefixedID,
+		DeezerID:    deezerID,
+		TidalID:     tidalID,
+		QobuzID:     qobuzID,
+		AlbumType:   track.AlbumType,
+	}
+}
+
+func metadataTrackDedupKey(track ExtTrackMetadata) string {
+	if isrc := strings.TrimSpace(track.ISRC); isrc != "" {
+		return "isrc:" + strings.ToUpper(isrc)
+	}
+	if spotifyID := strings.TrimSpace(track.SpotifyID); spotifyID != "" {
+		return "spotify:" + spotifyID
+	}
+	if providerID := strings.TrimSpace(track.ProviderID); providerID != "" && strings.TrimSpace(track.ID) != "" {
+		return providerID + ":" + strings.TrimSpace(track.ID)
+	}
+	return strings.TrimSpace(track.Name) + "|" + strings.TrimSpace(track.Artists)
+}
+
+func searchBuiltInMetadataTracks(providerID, query string, limit int) ([]ExtTrackMetadata, error) {
+	switch providerID {
+	case "deezer":
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		results, err := GetDeezerClient().SearchAll(ctx, query, limit, 0, "track")
+		if err != nil {
+			return nil, err
+		}
+
+		tracks := make([]ExtTrackMetadata, 0, len(results.Tracks))
+		for _, track := range results.Tracks {
+			tracks = append(tracks, normalizeBuiltInMetadataTrack(track, "deezer"))
+		}
+		return tracks, nil
+	case "qobuz":
+		return NewQobuzDownloader().SearchTracks(query, limit)
+	case "tidal":
+		return NewTidalDownloader().SearchTracks(query, limit)
+	default:
+		return nil, fmt.Errorf("unsupported built-in metadata provider: %s", providerID)
+	}
+}
+
+func (m *ExtensionManager) SearchTracksWithMetadataProviders(query string, limit int, includeExtensions bool) ([]ExtTrackMetadata, error) {
+	priority := GetMetadataProviderPriority()
+	if limit <= 0 {
+		limit = 20
+	}
+
+	extensionProviders := make(map[string]*ExtensionProviderWrapper)
+	if includeExtensions {
+		for _, provider := range m.GetMetadataProviders() {
+			extensionProviders[provider.extension.ID] = provider
+		}
+	}
+
+	orderedProviderIDs := make([]string, 0, len(priority)+len(extensionProviders))
+	seenProviderIDs := make(map[string]struct{}, len(priority)+len(extensionProviders))
+	for _, providerID := range priority {
+		providerID = strings.TrimSpace(providerID)
+		if providerID == "" {
+			continue
+		}
+		orderedProviderIDs = append(orderedProviderIDs, providerID)
+		seenProviderIDs[providerID] = struct{}{}
+	}
+	if includeExtensions {
+		remainingIDs := make([]string, 0, len(extensionProviders))
+		for providerID := range extensionProviders {
+			if _, exists := seenProviderIDs[providerID]; exists {
+				continue
+			}
+			remainingIDs = append(remainingIDs, providerID)
+		}
+		sort.Strings(remainingIDs)
+		orderedProviderIDs = append(orderedProviderIDs, remainingIDs...)
+	}
+
+	tracks := make([]ExtTrackMetadata, 0, limit)
+	seenTracks := make(map[string]struct{})
+	for _, providerID := range orderedProviderIDs {
+		var (
+			providerTracks []ExtTrackMetadata
+			err            error
+		)
+
+		if isBuiltInProvider(providerID) {
+			providerTracks, err = searchBuiltInMetadataTracksFunc(providerID, query, limit)
+		} else {
+			if !includeExtensions {
+				continue
+			}
+			provider := extensionProviders[providerID]
+			if provider == nil {
+				continue
+			}
+			var result *ExtSearchResult
+			result, err = provider.SearchTracks(query, limit)
+			if result != nil {
+				providerTracks = result.Tracks
+			}
+		}
+
+		if err != nil {
+			GoLog("[MetadataSearch] Search error from %s: %v\n", providerID, err)
+			continue
+		}
+
+		for _, track := range providerTracks {
+			key := metadataTrackDedupKey(track)
+			if key == "" {
+				continue
+			}
+			if _, exists := seenTracks[key]; exists {
+				continue
+			}
+			seenTracks[key] = struct{}{}
+			tracks = append(tracks, track)
+			if len(tracks) >= limit {
+				return tracks, nil
+			}
+		}
+	}
+
+	return tracks, nil
 }
 
 func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, error) {
@@ -765,6 +977,24 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 				if enrichedTrack.Artists != "" {
 					req.ArtistName = enrichedTrack.Artists
 				}
+				if enrichedTrack.AlbumName != "" && req.AlbumName == "" {
+					GoLog("[DownloadWithExtensionFallback] AlbumName from enrichment: %s\n", enrichedTrack.AlbumName)
+					req.AlbumName = enrichedTrack.AlbumName
+				}
+				if enrichedTrack.AlbumArtist != "" && req.AlbumArtist == "" {
+					req.AlbumArtist = enrichedTrack.AlbumArtist
+				}
+				if enrichedTrack.DurationMS > 0 && req.DurationMS == 0 {
+					GoLog("[DownloadWithExtensionFallback] DurationMS from enrichment: %d\n", enrichedTrack.DurationMS)
+					req.DurationMS = enrichedTrack.DurationMS
+				}
+				if enrichedTrack.CoverURL != "" && req.CoverURL == "" {
+					req.CoverURL = enrichedTrack.CoverURL
+				}
+				if enrichedTrack.ID != "" && req.SpotifyID == "" {
+					GoLog("[DownloadWithExtensionFallback] Track ID from enrichment: %s\n", enrichedTrack.ID)
+					req.SpotifyID = enrichedTrack.ID
+				}
 				if enrichedTrack.Label != "" && req.Label == "" {
 					GoLog("[DownloadWithExtensionFallback] Label from enrichment: %s\n", enrichedTrack.Label)
 					req.Label = enrichedTrack.Label
@@ -781,6 +1011,77 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 					GoLog("[DownloadWithExtensionFallback] ReleaseDate from enrichment: %s\n", enrichedTrack.ReleaseDate)
 					req.ReleaseDate = enrichedTrack.ReleaseDate
 				}
+			}
+		}
+	}
+
+	// If key metadata is still missing after extension enrichment, search
+	// configured metadata providers (Spotify/Deezer/Tidal/Qobuz) — same
+	// logic that ReEnrichFile uses.
+	if req.Source != "" && !isBuiltInProvider(strings.ToLower(req.Source)) &&
+		req.TrackName != "" && req.ArtistName != "" &&
+		(req.AlbumName == "" || req.ReleaseDate == "" || req.ISRC == "") {
+
+		searchQuery := req.TrackName + " " + req.ArtistName
+		GoLog("[DownloadWithExtensionFallback] Metadata incomplete, searching providers for: %s\n", searchQuery)
+
+		tracks, searchErr := extManager.SearchTracksWithMetadataProviders(searchQuery, 5, true)
+		if searchErr == nil && len(tracks) > 0 {
+			track := tracks[0]
+			GoLog("[DownloadWithExtensionFallback] Metadata match (%s): %s - %s (album: %s, date: %s, isrc: %s)\n",
+				track.ProviderID, track.Name, track.Artists, track.AlbumName, track.ReleaseDate, track.ISRC)
+
+			if track.AlbumName != "" && req.AlbumName == "" {
+				req.AlbumName = track.AlbumName
+			}
+			if track.AlbumArtist != "" && req.AlbumArtist == "" {
+				req.AlbumArtist = track.AlbumArtist
+			}
+			if track.ReleaseDate != "" && req.ReleaseDate == "" {
+				req.ReleaseDate = track.ReleaseDate
+			}
+			if track.ISRC != "" && req.ISRC == "" {
+				req.ISRC = track.ISRC
+			}
+			if track.TrackNumber > 0 && req.TrackNumber == 0 {
+				req.TrackNumber = track.TrackNumber
+			}
+			if track.DiscNumber > 0 && req.DiscNumber == 0 {
+				req.DiscNumber = track.DiscNumber
+			}
+			if track.CoverURL != "" && req.CoverURL == "" {
+				req.CoverURL = track.CoverURL
+			}
+			if track.Genre != "" && req.Genre == "" {
+				req.Genre = track.Genre
+			}
+			if track.Label != "" && req.Label == "" {
+				req.Label = track.Label
+			}
+			if track.Copyright != "" && req.Copyright == "" {
+				req.Copyright = track.Copyright
+			}
+		} else if searchErr != nil {
+			GoLog("[DownloadWithExtensionFallback] Metadata provider search failed (non-fatal): %v\n", searchErr)
+		}
+
+		// Try Deezer extended metadata if we have ISRC
+		if req.ISRC != "" &&
+			(req.Genre == "" || req.Label == "" || req.Copyright == "") {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			extMeta, err := GetDeezerClient().GetExtendedMetadataByISRC(ctx, req.ISRC)
+			cancel()
+			if err == nil && extMeta != nil {
+				if req.Genre == "" && extMeta.Genre != "" {
+					req.Genre = extMeta.Genre
+				}
+				if req.Label == "" && extMeta.Label != "" {
+					req.Label = extMeta.Label
+				}
+				if req.Copyright == "" && extMeta.Copyright != "" {
+					req.Copyright = extMeta.Copyright
+				}
+				GoLog("[DownloadWithExtensionFallback] Extended metadata from Deezer: genre=%s, label=%s, copyright=%s\n", req.Genre, req.Label, req.Copyright)
 			}
 		}
 	}
@@ -878,6 +1179,30 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 					}
 				}
 
+				// Always pass enriched metadata from req so Flutter can
+				// embed it — fills gaps from metadata provider search.
+				if req.AlbumName != "" && resp.Album == "" {
+					resp.Album = req.AlbumName
+				}
+				if req.AlbumArtist != "" && resp.AlbumArtist == "" {
+					resp.AlbumArtist = req.AlbumArtist
+				}
+				if req.ReleaseDate != "" && resp.ReleaseDate == "" {
+					resp.ReleaseDate = req.ReleaseDate
+				}
+				if req.ISRC != "" && resp.ISRC == "" {
+					resp.ISRC = req.ISRC
+				}
+				if req.TrackNumber > 0 && resp.TrackNumber == 0 {
+					resp.TrackNumber = req.TrackNumber
+				}
+				if req.DiscNumber > 0 && resp.DiscNumber == 0 {
+					resp.DiscNumber = req.DiscNumber
+				}
+				if req.CoverURL != "" && resp.CoverURL == "" {
+					resp.CoverURL = req.CoverURL
+				}
+
 				return resp, nil
 			}
 
@@ -928,7 +1253,8 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 		GoLog("[DownloadWithExtensionFallback] Trying provider: %s\n", providerID)
 
 		if isBuiltInProvider(providerIDNormalized) {
-			if (req.Genre == "" || req.Label == "") && req.ISRC != "" {
+			if (req.Genre == "" || req.Label == "" || req.Copyright == "") &&
+				req.ISRC != "" {
 				GoLog("[DownloadWithExtensionFallback] Enriching extended metadata from Deezer for ISRC: %s\n", req.ISRC)
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				deezerClient := GetDeezerClient()
@@ -942,6 +1268,10 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 					if req.Label == "" && extMeta.Label != "" {
 						req.Label = extMeta.Label
 						GoLog("[DownloadWithExtensionFallback] Label from Deezer: %s\n", req.Label)
+					}
+					if req.Copyright == "" && extMeta.Copyright != "" {
+						req.Copyright = extMeta.Copyright
+						GoLog("[DownloadWithExtensionFallback] Copyright from Deezer: %s\n", req.Copyright)
 					}
 				} else if err != nil {
 					GoLog("[DownloadWithExtensionFallback] Failed to get extended metadata from Deezer: %v\n", err)
@@ -1150,6 +1480,7 @@ func tryBuiltInProvider(providerID string, req DownloadRequest) (*DownloadRespon
 				TrackNumber: qobuzResult.TrackNumber,
 				DiscNumber:  qobuzResult.DiscNumber,
 				ISRC:        qobuzResult.ISRC,
+				CoverURL:    qobuzResult.CoverURL,
 			}
 		}
 		err = qobuzErr
@@ -1192,6 +1523,7 @@ func tryBuiltInProvider(providerID string, req DownloadRequest) (*DownloadRespon
 		TrackNumber:      result.TrackNumber,
 		DiscNumber:       result.DiscNumber,
 		ISRC:             result.ISRC,
+		CoverURL:         result.CoverURL,
 		Genre:            req.Genre,
 		Label:            req.Label,
 		Copyright:        req.Copyright,
@@ -1429,6 +1761,12 @@ func (p *ExtensionProviderWrapper) HandleURL(url string) (*ExtURLHandleResult, e
 			handleResult.Artist.Albums[i].ProviderID = p.extension.ID
 			for j := range handleResult.Artist.Albums[i].Tracks {
 				handleResult.Artist.Albums[i].Tracks[j].ProviderID = p.extension.ID
+			}
+		}
+		for i := range handleResult.Artist.Releases {
+			handleResult.Artist.Releases[i].ProviderID = p.extension.ID
+			for j := range handleResult.Artist.Releases[i].Tracks {
+				handleResult.Artist.Releases[i].Tracks[j].ProviderID = p.extension.ID
 			}
 		}
 		for i := range handleResult.Artist.TopTracks {

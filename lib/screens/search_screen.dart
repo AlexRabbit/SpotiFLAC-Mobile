@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:spotiflac_android/l10n/l10n.dart';
 import 'package:spotiflac_android/services/cover_cache_manager.dart';
 import 'package:spotiflac_android/models/track.dart';
 import 'package:spotiflac_android/providers/track_provider.dart';
@@ -27,10 +28,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _searchController = TextEditingController(text: widget.query);
     if (widget.query.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final settings = ref.read(settingsProvider);
-        ref
-            .read(trackProvider.notifier)
-            .search(widget.query, metadataSource: settings.metadataSource);
+        ref.read(trackProvider.notifier).search(widget.query);
       });
     }
   }
@@ -44,10 +42,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void _search() {
     final query = _searchController.text.trim();
     if (query.isNotEmpty) {
-      final settings = ref.read(settingsProvider);
-      ref
-          .read(trackProvider.notifier)
-          .search(query, metadataSource: settings.metadataSource);
+      ref.read(trackProvider.notifier).search(query);
     }
   }
 
@@ -58,7 +53,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         .addToQueue(track, settings.defaultService);
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text('Added "${track.name}" to queue')));
+    ).showSnackBar(SnackBar(content: Text(context.l10n.snackbarAddedToQueue(track.name))));
   }
 
   @override

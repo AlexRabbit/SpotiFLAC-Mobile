@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,7 @@ import 'package:spotiflac_android/services/downloaded_embedded_cover_resolver.da
 import 'package:spotiflac_android/services/platform_bridge.dart';
 import 'package:spotiflac_android/utils/app_bar_layout.dart';
 import 'package:spotiflac_android/utils/file_access.dart';
+import 'package:spotiflac_android/utils/string_utils.dart';
 import 'package:spotiflac_android/screens/playlist_screen.dart';
 import 'package:spotiflac_android/screens/downloaded_album_screen.dart';
 import 'package:spotiflac_android/widgets/download_service_picker.dart';
@@ -80,6 +82,37 @@ class _SearchResultBuckets {
     required this.artistItems,
   });
 }
+
+const _homeHistoryPreviewLimit = 48;
+
+class _HomeHistoryPreview {
+  final List<DownloadHistoryItem> items;
+
+  const _HomeHistoryPreview(this.items);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _HomeHistoryPreview && listEquals(items, other.items);
+
+  @override
+  int get hashCode => Object.hashAll(items);
+}
+
+final _homeHistoryPreviewProvider = Provider<List<DownloadHistoryItem>>((ref) {
+  final preview = ref.watch(
+    downloadHistoryProvider.select((s) {
+      final items = s.items;
+      if (items.length <= _homeHistoryPreviewLimit) {
+        return _HomeHistoryPreview(items);
+      }
+      return _HomeHistoryPreview(
+        items.take(_homeHistoryPreviewLimit).toList(growable: false),
+      );
+    }),
+  );
+  return preview.items;
+});
 
 _RecentAccessView _buildRecentAccessViewData(
   List<RecentAccessItem> items,
@@ -164,9 +197,7 @@ _RecentAccessView _buildRecentAccessViewData(
 }
 
 final recentAccessViewProvider = Provider<_RecentAccessView>((ref) {
-  final historyItems = ref.watch(
-    downloadHistoryProvider.select((s) => s.items),
-  );
+  final historyItems = ref.watch(_homeHistoryPreviewProvider);
   final recentAccessItems = ref.watch(
     recentAccessProvider.select((s) => s.items),
   );
@@ -459,6 +490,9 @@ class _HomeTabState extends ConsumerState<HomeTab>
 
     if (searchProvider == null || searchProvider.isEmpty) return false;
 
+    // Built-in providers (tidal, qobuz) also support live search
+    if (_builtInSearchProviders.contains(searchProvider)) return true;
+
     final extension = extState.extensions
         .where((e) => e.id == searchProvider && e.enabled)
         .firstOrNull;
@@ -516,6 +550,9 @@ class _HomeTabState extends ConsumerState<HomeTab>
     }
   }
 
+  /// Built-in search providers that are not extensions
+  static const _builtInSearchProviders = {'tidal', 'qobuz'};
+
   Future<void> _performSearch(String query, {String? filterOverride}) async {
     final settings = ref.read(settingsProvider);
     final extState = ref.read(extensionProvider);
@@ -528,9 +565,14 @@ class _HomeTabState extends ConsumerState<HomeTab>
     if (_lastSearchQuery == searchKey) return;
     _lastSearchQuery = searchKey;
 
+    final isBuiltInProvider =
+        searchProvider != null &&
+        _builtInSearchProviders.contains(searchProvider);
+
     final isExtensionEnabled =
         searchProvider != null &&
         searchProvider.isNotEmpty &&
+        !isBuiltInProvider &&
         extState.extensions.any((e) => e.id == searchProvider && e.enabled);
 
     if (isExtensionEnabled) {
@@ -541,19 +583,25 @@ class _HomeTabState extends ConsumerState<HomeTab>
       await ref
           .read(trackProvider.notifier)
           .customSearch(searchProvider, query, options: options);
-    } else {
-      if (searchProvider != null &&
-          searchProvider.isNotEmpty &&
-          !isExtensionEnabled) {
-        ref.read(settingsProvider.notifier).setSearchProvider(null);
-      }
+    } else if (isBuiltInProvider) {
+      // Use built-in Tidal or Qobuz search
       await ref
           .read(trackProvider.notifier)
           .search(
             query,
-            metadataSource: settings.metadataSource,
             filterOverride: selectedFilter,
+            builtInSearchProvider: searchProvider,
           );
+    } else {
+      if (searchProvider != null &&
+          searchProvider.isNotEmpty &&
+          !isExtensionEnabled &&
+          !isBuiltInProvider) {
+        ref.read(settingsProvider.notifier).setSearchProvider(null);
+      }
+      await ref
+          .read(trackProvider.notifier)
+          .search(query, filterOverride: selectedFilter);
     }
     ref.read(settingsProvider.notifier).setHasSearchedBefore();
   }
@@ -583,12 +631,28 @@ class _HomeTabState extends ConsumerState<HomeTab>
     if (url.isEmpty) return;
     if (url.startsWith('http') || url.startsWith('spotify:')) {
       await ref.read(trackProvider.notifier).fetchFromUrl(url);
-      _navigateToDetailIfNeeded();
+      final trackState = ref.read(trackProvider);
+      if (trackState.error != null && mounted) {
+        final l10n = context.l10n;
+        final errorMsg = trackState.error!;
+        final isRateLimit =
+            errorMsg.contains('429') ||
+            errorMsg.toLowerCase().contains('rate limit') ||
+            errorMsg.toLowerCase().contains('too many requests');
+        final displayMessage = errorMsg == 'url_not_recognized'
+            ? l10n.errorUrlNotRecognizedMessage
+            : isRateLimit
+            ? l10n.errorRateLimitedMessage
+            : l10n.errorUrlFetchFailed;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(displayMessage)));
+        ref.read(trackProvider.notifier).clear();
+      } else {
+        _navigateToDetailIfNeeded();
+      }
     } else {
-      final settings = ref.read(settingsProvider);
-      await ref
-          .read(trackProvider.notifier)
-          .search(url, metadataSource: settings.metadataSource);
+      await ref.read(trackProvider.notifier).search(url);
     }
     ref.read(settingsProvider.notifier).setHasSearchedBefore();
   }
@@ -676,6 +740,7 @@ class _HomeTabState extends ConsumerState<HomeTab>
           trackName: track.name,
           artistName: track.artistName,
           coverUrl: track.coverUrl,
+          recommendedService: trackState.searchSource,
           onSelect: (quality, service) {
             ref
                 .read(downloadQueueProvider.notifier)
@@ -804,7 +869,7 @@ class _HomeTabState extends ConsumerState<HomeTab>
                     const SizedBox(height: 12),
                     CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Skip already downloaded songs'),
+                      title: Text(l10n.homeSkipAlreadyDownloaded),
                       value: skipDownloaded,
                       onChanged: (value) {
                         setDialogState(() {
@@ -975,9 +1040,7 @@ class _HomeTabState extends ConsumerState<HomeTab>
     final mediaQuery = MediaQuery.of(context);
     final screenHeight = mediaQuery.size.height;
     final topPadding = normalizedHeaderTopPadding(context);
-    final historyItems = ref.watch(
-      downloadHistoryProvider.select((s) => s.items),
-    );
+    final historyItems = ref.watch(_homeHistoryPreviewProvider);
 
     final recentModeRequested = isShowingRecentAccess || isSearchFocused;
     final showRecentAccess =
@@ -1262,7 +1325,8 @@ class _HomeTabState extends ConsumerState<HomeTab>
                       (searchArtists != null && searchArtists.isNotEmpty) ||
                       (searchAlbums != null && searchAlbums.isNotEmpty) ||
                       (searchPlaylists != null && searchPlaylists.isNotEmpty) ||
-                      isLoading;
+                      isLoading ||
+                      error != null;
 
                   return SliverMainAxisGroup(
                     slivers: _buildSearchResults(
@@ -1737,7 +1801,7 @@ class _HomeTabState extends ConsumerState<HomeTab>
             ),
             ListTile(
               leading: Icon(Icons.album, color: colorScheme.onSurfaceVariant),
-              title: const Text('Go to Album'),
+              title: Text(context.l10n.homeGoToAlbum),
               onTap: () {
                 Navigator.pop(context);
                 _navigateToTrackAlbum(item);
@@ -1809,9 +1873,9 @@ class _HomeTabState extends ConsumerState<HomeTab>
         ),
       );
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Album info not available')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.homeAlbumInfoUnavailable)),
+      );
     }
   }
 
@@ -2224,10 +2288,13 @@ class _HomeTabState extends ConsumerState<HomeTab>
   }
 
   Widget _buildErrorWidget(String error, ColorScheme colorScheme) {
+    final l10n = context.l10n;
     final isRateLimit =
         error.contains('429') ||
         error.toLowerCase().contains('rate limit') ||
         error.toLowerCase().contains('too many requests');
+
+    final isUrlNotRecognized = error == 'url_not_recognized';
 
     if (isRateLimit) {
       return Card(
@@ -2245,7 +2312,7 @@ class _HomeTabState extends ConsumerState<HomeTab>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Rate Limited',
+                      l10n.errorRateLimited,
                       style: TextStyle(
                         color: colorScheme.onErrorContainer,
                         fontWeight: FontWeight.bold,
@@ -2253,11 +2320,47 @@ class _HomeTabState extends ConsumerState<HomeTab>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Too many requests. Please wait a moment before searching again.',
+                      l10n.errorRateLimitedMessage,
                       style: TextStyle(
                         color: colorScheme.onErrorContainer,
                         fontSize: 12,
                       ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (isUrlNotRecognized) {
+      return Card(
+        elevation: 0,
+        color: colorScheme.errorContainer.withValues(alpha: 0.5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.link_off, color: colorScheme.error),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.errorUrlNotRecognized,
+                      style: TextStyle(
+                        color: colorScheme.error,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      l10n.errorUrlNotRecognizedMessage,
+                      style: TextStyle(color: colorScheme.error, fontSize: 12),
                     ),
                   ],
                 ),
@@ -2279,7 +2382,10 @@ class _HomeTabState extends ConsumerState<HomeTab>
             Icon(Icons.error_outline, color: colorScheme.error),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(error, style: TextStyle(color: colorScheme.error)),
+              child: Text(
+                l10n.errorUrlFetchFailed,
+                style: TextStyle(color: colorScheme.error),
+              ),
             ),
           ],
         ),
@@ -2687,6 +2793,14 @@ class _HomeTabState extends ConsumerState<HomeTab>
     }
 
     if (searchProvider != null && searchProvider.isNotEmpty) {
+      // Check built-in providers first
+      if (searchProvider == 'tidal') {
+        return 'Search with Tidal...';
+      }
+      if (searchProvider == 'qobuz') {
+        return 'Search with Qobuz...';
+      }
+
       final ext = extState.extensions
           .where((e) => e.id == searchProvider)
           .firstOrNull;
@@ -2907,9 +3021,6 @@ class _SearchProviderDropdown extends ConsumerWidget {
     final currentProvider = ref.watch(
       settingsProvider.select((s) => s.searchProvider),
     );
-    final metadataSource = ref.watch(
-      settingsProvider.select((s) => s.metadataSource),
-    );
     final extensions = ref.watch(extensionProvider.select((s) => s.extensions));
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -2924,6 +3035,11 @@ class _SearchProviderDropdown extends ConsumerWidget {
           .firstOrNull;
     }
 
+    // Check if current provider is a built-in provider (tidal/qobuz)
+    const builtInProviders = {'tidal', 'qobuz'};
+    final isBuiltInProvider =
+        currentProvider != null && builtInProviders.contains(currentProvider);
+
     IconData displayIcon = Icons.search;
     String? iconPath;
     if (currentExt != null) {
@@ -2931,10 +3047,8 @@ class _SearchProviderDropdown extends ConsumerWidget {
       if (currentExt.searchBehavior?.icon != null) {
         displayIcon = _getIconFromName(currentExt.searchBehavior!.icon!);
       }
-    }
-
-    if (searchProviders.isEmpty) {
-      return const Icon(Icons.search);
+    } else if (isBuiltInProvider) {
+      displayIcon = Icons.music_note;
     }
 
     return Padding(
@@ -2987,7 +3101,7 @@ class _SearchProviderDropdown extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    metadataSource == 'spotify' ? 'Spotify' : 'Deezer',
+                    'Deezer',
                     style: TextStyle(
                       fontWeight:
                           currentProvider == null || currentProvider.isEmpty
@@ -2997,6 +3111,62 @@ class _SearchProviderDropdown extends ConsumerWidget {
                   ),
                 ),
                 if (currentProvider == null || currentProvider.isEmpty)
+                  Icon(Icons.check, size: 18, color: colorScheme.primary),
+              ],
+            ),
+          ),
+          // Built-in Tidal search option
+          PopupMenuItem<String>(
+            value: 'tidal',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.music_note,
+                  size: 20,
+                  color: currentProvider == 'tidal'
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Tidal',
+                    style: TextStyle(
+                      fontWeight: currentProvider == 'tidal'
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                if (currentProvider == 'tidal')
+                  Icon(Icons.check, size: 18, color: colorScheme.primary),
+              ],
+            ),
+          ),
+          // Built-in Qobuz search option
+          PopupMenuItem<String>(
+            value: 'qobuz',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.music_note,
+                  size: 20,
+                  color: currentProvider == 'qobuz'
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Qobuz',
+                    style: TextStyle(
+                      fontWeight: currentProvider == 'qobuz'
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                if (currentProvider == 'qobuz')
                   Icon(Icons.check, size: 18, color: colorScheme.primary),
               ],
             ),
@@ -3829,6 +3999,7 @@ class _ExtensionAlbumScreenState extends ConsumerState<ExtensionAlbumScreen> {
       name: (data['name'] ?? '').toString(),
       artistName: (data['artists'] ?? data['artist'] ?? '').toString(),
       albumName: (data['album_name'] ?? widget.albumName).toString(),
+      albumArtist: (data['album_artist'] ?? _artistName)?.toString(),
       artistId:
           (data['artist_id'] ?? data['artistId'])?.toString() ?? _artistId,
       albumId: data['album_id']?.toString() ?? widget.albumId,
@@ -4136,7 +4307,7 @@ class _ExtensionArtistScreenState extends ConsumerState<ExtensionArtistScreen> {
       artists: (data['artists'] ?? '').toString(),
       releaseDate: (data['release_date'] ?? '').toString(),
       totalTracks: data['total_tracks'] as int? ?? 0,
-      coverUrl: data['cover_url']?.toString(),
+      coverUrl: normalizeCoverReference(data['cover_url']?.toString()),
       albumType: (data['album_type'] ?? 'album').toString(),
       providerId: (data['provider_id'] ?? widget.extensionId).toString(),
     );
@@ -4161,7 +4332,9 @@ class _ExtensionArtistScreenState extends ConsumerState<ExtensionArtistScreen> {
           (data['artist_id'] ?? data['artistId'])?.toString() ??
           widget.artistId,
       albumId: data['album_id']?.toString(),
-      coverUrl: (data['cover_url'] ?? data['images'])?.toString(),
+      coverUrl: normalizeCoverReference(
+        (data['cover_url'] ?? data['images'])?.toString(),
+      ),
       isrc: data['isrc']?.toString(),
       duration: (durationMs / 1000).round(),
       trackNumber: data['track_number'] as int?,

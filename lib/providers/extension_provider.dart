@@ -504,6 +504,11 @@ class ExtensionNotifier extends Notifier<ExtensionState> {
   }
 
   Future<void> _cleanupExtensions({required String reason}) async {
+    if (!PlatformBridge.supportsExtensionSystem) {
+      _cleanupInFlight = false;
+      return;
+    }
+
     try {
       await PlatformBridge.cleanupExtensions();
       _log.d('Extensions cleaned up ($reason)');
@@ -518,6 +523,17 @@ class ExtensionNotifier extends Notifier<ExtensionState> {
     if (state.isInitialized) return;
 
     state = state.copyWith(isLoading: true, error: null);
+
+    if (!PlatformBridge.supportsExtensionSystem) {
+      state = state.copyWith(
+        isInitialized: true,
+        isLoading: false,
+        extensions: const [],
+        error: null,
+      );
+      _log.i('Extension system disabled on this platform');
+      return;
+    }
 
     try {
       await PlatformBridge.initExtensionSystem(extensionsDir, dataDir);
@@ -823,11 +839,19 @@ class ExtensionNotifier extends Notifier<ExtensionState> {
       List<String> priority;
       if (savedJson != null) {
         final saved = jsonDecode(savedJson) as List<dynamic>;
-        priority = saved.map((e) => e as String).toList();
+        priority = _sanitizeMetadataProviderPriority(
+          saved.map((e) => e as String).toList(),
+        );
         _log.d('Loaded metadata provider priority from prefs: $priority');
+        await prefs.setString(
+          _metadataProviderPriorityKey,
+          jsonEncode(priority),
+        );
         await PlatformBridge.setMetadataProviderPriority(priority);
       } else {
-        priority = await PlatformBridge.getMetadataProviderPriority();
+        priority = _sanitizeMetadataProviderPriority(
+          await PlatformBridge.getMetadataProviderPriority(),
+        );
         _log.d('Using default metadata provider priority: $priority');
       }
 
@@ -840,11 +864,15 @@ class ExtensionNotifier extends Notifier<ExtensionState> {
   Future<void> setMetadataProviderPriority(List<String> priority) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_metadataProviderPriorityKey, jsonEncode(priority));
+      final sanitized = _sanitizeMetadataProviderPriority(priority);
+      await prefs.setString(
+        _metadataProviderPriorityKey,
+        jsonEncode(sanitized),
+      );
 
-      await PlatformBridge.setMetadataProviderPriority(priority);
-      state = state.copyWith(metadataProviderPriority: priority);
-      _log.d('Saved metadata provider priority: $priority');
+      await PlatformBridge.setMetadataProviderPriority(sanitized);
+      state = state.copyWith(metadataProviderPriority: sanitized);
+      _log.d('Saved metadata provider priority: $sanitized');
     } catch (e) {
       _log.e('Failed to set metadata provider priority: $e');
       state = state.copyWith(error: e.toString());
@@ -880,13 +908,32 @@ class ExtensionNotifier extends Notifier<ExtensionState> {
   }
 
   List<String> getAllMetadataProviders() {
-    final providers = ['deezer', 'spotify'];
+    final providers = ['deezer', 'qobuz', 'tidal'];
     for (final ext in state.extensions) {
       if (ext.enabled && ext.hasMetadataProvider) {
         providers.add(ext.id);
       }
     }
     return providers;
+  }
+
+  List<String> _sanitizeMetadataProviderPriority(List<String> input) {
+    final allowed = getAllMetadataProviders().toSet();
+    final result = <String>[];
+
+    for (final provider in input) {
+      if (allowed.contains(provider) && !result.contains(provider)) {
+        result.add(provider);
+      }
+    }
+
+    for (final provider in const ['deezer', 'qobuz', 'tidal']) {
+      if (!result.contains(provider)) {
+        result.add(provider);
+      }
+    }
+
+    return result;
   }
 
   List<Extension> get searchProviders {

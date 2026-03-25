@@ -11,6 +11,7 @@ import 'package:spotiflac_android/providers/local_library_provider.dart';
 import 'package:spotiflac_android/providers/playback_provider.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
 import 'package:spotiflac_android/utils/file_access.dart';
+import 'package:spotiflac_android/utils/string_utils.dart';
 import 'package:spotiflac_android/widgets/track_collection_quick_actions.dart';
 import 'package:spotiflac_android/widgets/download_service_picker.dart';
 import 'package:spotiflac_android/providers/library_collections_provider.dart';
@@ -81,16 +82,23 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     _scrollController.addListener(_onScroll);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Use extensionId if available, otherwise detect from albumId prefix
       final providerId =
           widget.extensionId ??
-          (widget.albumId.startsWith('deezer:') ? 'deezer' : 'spotify');
+          (() {
+            if (widget.albumId.startsWith('deezer:')) return 'deezer';
+            if (widget.albumId.startsWith('qobuz:')) return 'qobuz';
+            if (widget.albumId.startsWith('tidal:')) return 'tidal';
+            return 'spotify';
+          })();
       ref
           .read(recentAccessProvider.notifier)
           .recordAlbumAccess(
             id: widget.albumId,
             name: widget.albumName,
-            artistName: widget.tracks?.firstOrNull?.artistName,
+            artistName:
+                widget.artistName ??
+                widget.tracks?.firstOrNull?.albumArtist ??
+                widget.tracks?.firstOrNull?.artistName,
             imageUrl: widget.coverUrl,
             providerId: providerId,
           );
@@ -129,9 +137,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     return (mediaSize.height * 0.55).clamp(360.0, 520.0);
   }
 
-  /// Upgrade cover URL to a reasonable resolution for full-screen display.
-  /// Spotify CDN only has 300, 640, ~2000 — we stay at 640 (no intermediate).
-  /// Deezer CDN: upgrade to 1000x1000 (available: 56, 250, 500, 1000, 1400, 1800).
+  /// Upgrade cover URL to a higher resolution for full-screen display.
   String? _highResCoverUrl(String? url) {
     if (url == null) return null;
     // Spotify CDN: upgrade 300 → 640 only (no intermediate between 640 and 2000)
@@ -175,6 +181,12 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
           'album',
           deezerAlbumId,
         );
+      } else if (widget.albumId.startsWith('qobuz:')) {
+        final qobuzAlbumId = widget.albumId.replaceFirst('qobuz:', '');
+        metadata = await PlatformBridge.getQobuzMetadata('album', qobuzAlbumId);
+      } else if (widget.albumId.startsWith('tidal:')) {
+        final tidalAlbumId = widget.albumId.replaceFirst('tidal:', '');
+        metadata = await PlatformBridge.getTidalMetadata('album', tidalAlbumId);
       } else {
         final url = 'https://open.spotify.com/album/${widget.albumId}';
         metadata = await PlatformBridge.getSpotifyMetadataWithFallback(url);
@@ -218,12 +230,14 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       artistId:
           (data['artist_id'] ?? data['artistId'])?.toString() ?? _artistId,
       albumId: data['album_id']?.toString() ?? widget.albumId,
-      coverUrl: data['images'] as String?,
+      coverUrl: normalizeCoverReference(data['images']?.toString()),
       isrc: data['isrc'] as String?,
       duration: ((data['duration_ms'] as int? ?? 0) / 1000).round(),
       trackNumber: data['track_number'] as int?,
       discNumber: data['disc_number'] as int?,
       releaseDate: data['release_date'] as String?,
+      albumType: data['album_type'] as String?,
+      totalTracks: data['total_tracks'] as int?,
     );
   }
 
@@ -270,7 +284,11 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   ) {
     final expandedHeight = _calculateExpandedHeight(context);
     final tracks = _tracks ?? [];
-    final artistName = tracks.isNotEmpty ? tracks.first.artistName : null;
+    final artistName =
+        widget.artistName ??
+        (tracks.isNotEmpty
+            ? (tracks.first.albumArtist ?? tracks.first.artistName)
+            : null);
     final releaseDate = tracks.isNotEmpty ? tracks.first.releaseDate : null;
 
     return SliverAppBar(
@@ -503,7 +521,6 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   }
 
   Widget _buildInfoCard(BuildContext context, ColorScheme colorScheme) {
-    // Info is now displayed in the full-screen cover overlay
     return const SliverToBoxAdapter(child: SizedBox.shrink());
   }
 
@@ -558,35 +575,80 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   void _downloadAll(BuildContext context) {
     final tracks = _tracks;
     if (tracks == null || tracks.isEmpty) return;
+
+    // Skip already-downloaded tracks
+    final historyState = ref.read(downloadHistoryProvider);
     final settings = ref.read(settingsProvider);
+    final localLibState =
+        (settings.localLibraryEnabled && settings.localLibraryShowDuplicates)
+        ? ref.read(localLibraryProvider)
+        : null;
+    final tracksToQueue = <Track>[];
+    int skippedCount = 0;
+
+    for (final track in tracks) {
+      final isInHistory =
+          historyState.isDownloaded(track.id) ||
+          (track.isrc != null && historyState.getByIsrc(track.isrc!) != null) ||
+          historyState.findByTrackAndArtist(track.name, track.artistName) !=
+              null;
+      final isInLocal =
+          localLibState?.existsInLibrary(
+            isrc: track.isrc,
+            trackName: track.name,
+            artistName: track.artistName,
+          ) ??
+          false;
+
+      if (isInHistory || isInLocal) {
+        skippedCount++;
+      } else {
+        tracksToQueue.add(track);
+      }
+    }
+
+    if (tracksToQueue.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.l10n.discographySkippedDownloaded(0, skippedCount),
+          ),
+        ),
+      );
+      return;
+    }
+
     if (settings.askQualityBeforeDownload) {
       DownloadServicePicker.show(
         context,
-        trackName: '${tracks.length} tracks',
+        trackName: '${tracksToQueue.length} tracks',
         artistName: widget.albumName,
         onSelect: (quality, service) {
           ref
               .read(downloadQueueProvider.notifier)
-              .addMultipleToQueue(tracks, service, qualityOverride: quality);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                context.l10n.snackbarAddedTracksToQueue(tracks.length),
-              ),
-            ),
-          );
+              .addMultipleToQueue(
+                tracksToQueue,
+                service,
+                qualityOverride: quality,
+              );
+          _showQueuedSnackbar(context, tracksToQueue.length, skippedCount);
         },
       );
     } else {
       ref
           .read(downloadQueueProvider.notifier)
-          .addMultipleToQueue(tracks, settings.defaultService);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.snackbarAddedTracksToQueue(tracks.length)),
-        ),
-      );
+          .addMultipleToQueue(tracksToQueue, settings.defaultService);
+      _showQueuedSnackbar(context, tracksToQueue.length, skippedCount);
     }
+  }
+
+  void _showQueuedSnackbar(BuildContext context, int added, int skipped) {
+    final message = skipped > 0
+        ? context.l10n.discographySkippedDownloaded(added, skipped)
+        : context.l10n.snackbarAddedTracksToQueue(added);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildLoveAllButton() {
@@ -617,7 +679,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
           size: 22,
           color: allLoved ? Colors.redAccent : Colors.white,
         ),
-        tooltip: allLoved ? 'Remove from Loved' : 'Love All',
+        tooltip: allLoved
+            ? context.l10n.trackOptionRemoveFromLoved
+            : context.l10n.tooltipLoveAll,
         padding: EdgeInsets.zero,
       ),
     );
@@ -640,7 +704,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
             ? null
             : () => showAddTracksToPlaylistSheet(context, ref, _tracks!),
         icon: const Icon(Icons.add, size: 22, color: Colors.white),
-        tooltip: 'Add to Playlist',
+        tooltip: context.l10n.tooltipAddToPlaylist,
         padding: EdgeInsets.zero,
       ),
     );
@@ -658,7 +722,11 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Removed ${tracks.length} tracks from Loved')),
+          SnackBar(
+            content: Text(
+              context.l10n.snackbarRemovedTracksFromLoved(tracks.length),
+            ),
+          ),
         );
       }
     } else {
@@ -671,7 +739,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added $addedCount tracks to Loved')),
+          SnackBar(
+            content: Text(context.l10n.snackbarAddedTracksToLoved(addedCount)),
+          ),
         );
       }
     }

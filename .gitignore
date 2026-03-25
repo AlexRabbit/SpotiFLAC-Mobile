@@ -12,6 +12,9 @@ Thumbs.db
 # Kiro specs (development only)
 .kiro/
 
+# Design assets (banners, mockups)
+design/
+
 # Reference folder (development only)
 referensi/
 
@@ -64,6 +67,7 @@ AGENTS.md
 
 # Temp/misc
 nul
+network_requests.txt
 
 # Log files
 *.log
@@ -73,3 +77,6 @@ flutter_*.log
 # Development tools
 tool/
 .claude/settings.local.json
+
+# FVM Version Cache
+.fvm/

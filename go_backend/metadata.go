@@ -552,6 +552,14 @@ func ExtractLyrics(filePath string) (string, error) {
 		return extractLyricsFromSidecarLRC(filePath)
 	}
 
+	if strings.HasSuffix(lower, ".m4a") || strings.HasSuffix(lower, ".aac") {
+		lyrics, err := extractLyricsFromM4A(filePath)
+		if err == nil && strings.TrimSpace(lyrics) != "" {
+			return lyrics, nil
+		}
+		return extractLyricsFromSidecarLRC(filePath)
+	}
+
 	if strings.HasSuffix(lower, ".mp3") {
 		meta, err := ReadID3Tags(filePath)
 		if err == nil && meta != nil {
@@ -579,6 +587,299 @@ func ExtractLyrics(filePath string) (string, error) {
 	}
 
 	return extractLyricsFromSidecarLRC(filePath)
+}
+
+func ReadM4ATags(filePath string) (*AudioMetadata, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	ilst, err := findM4AIlstAtom(f, fi.Size())
+	if err != nil {
+		return nil, err
+	}
+
+	metadata := &AudioMetadata{}
+	start := ilst.offset + ilst.headerSize
+	end := ilst.offset + ilst.size
+	for pos := start; pos+8 <= end; {
+		header, err := readAtomHeaderAt(f, pos, fi.Size())
+		if err != nil {
+			return nil, err
+		}
+		if header.size == 0 {
+			header.size = end - pos
+		}
+		if header.size < header.headerSize {
+			return nil, fmt.Errorf("invalid atom size for %s", header.typ)
+		}
+
+		switch header.typ {
+		case "\xa9nam":
+			metadata.Title, _ = readM4ATextValue(f, header, fi.Size())
+		case "\xa9ART":
+			metadata.Artist, _ = readM4ATextValue(f, header, fi.Size())
+		case "\xa9alb":
+			metadata.Album, _ = readM4ATextValue(f, header, fi.Size())
+		case "aART":
+			metadata.AlbumArtist, _ = readM4ATextValue(f, header, fi.Size())
+		case "\xa9day":
+			metadata.Date, _ = readM4ATextValue(f, header, fi.Size())
+			metadata.Year = metadata.Date
+		case "\xa9gen":
+			metadata.Genre, _ = readM4ATextValue(f, header, fi.Size())
+		case "\xa9wrt":
+			metadata.Composer, _ = readM4ATextValue(f, header, fi.Size())
+		case "\xa9cmt":
+			metadata.Comment, _ = readM4ATextValue(f, header, fi.Size())
+		case "cprt":
+			metadata.Copyright, _ = readM4ATextValue(f, header, fi.Size())
+		case "\xa9lyr":
+			metadata.Lyrics, _ = readM4ATextValue(f, header, fi.Size())
+		case "trkn":
+			metadata.TrackNumber, _ = readM4AIndexValue(f, header, fi.Size())
+		case "disk":
+			metadata.DiscNumber, _ = readM4AIndexValue(f, header, fi.Size())
+		case "----":
+			name, value, freeformErr := readM4AFreeformValue(f, header, fi.Size())
+			if freeformErr == nil {
+				switch strings.ToUpper(strings.TrimSpace(name)) {
+				case "ISRC":
+					metadata.ISRC = value
+				case "LABEL", "ORGANIZATION":
+					metadata.Label = value
+				case "COMMENT":
+					if metadata.Comment == "" {
+						metadata.Comment = value
+					}
+				case "COMPOSER":
+					if metadata.Composer == "" {
+						metadata.Composer = value
+					}
+				case "COPYRIGHT":
+					if metadata.Copyright == "" {
+						metadata.Copyright = value
+					}
+				case "LYRICS", "UNSYNCEDLYRICS":
+					if metadata.Lyrics == "" {
+						metadata.Lyrics = value
+					}
+				}
+			}
+		}
+
+		pos += header.size
+	}
+
+	if metadata.Title == "" &&
+		metadata.Artist == "" &&
+		metadata.Album == "" &&
+		metadata.AlbumArtist == "" &&
+		metadata.Lyrics == "" &&
+		metadata.TrackNumber == 0 &&
+		metadata.DiscNumber == 0 {
+		return nil, fmt.Errorf("no M4A tags found")
+	}
+
+	return metadata, nil
+}
+
+func extractLyricsFromM4A(filePath string) (string, error) {
+	metadata, err := ReadM4ATags(filePath)
+	if err != nil {
+		return "", err
+	}
+	if metadata == nil || strings.TrimSpace(metadata.Lyrics) == "" {
+		return "", fmt.Errorf("no lyrics found in file")
+	}
+	return metadata.Lyrics, nil
+}
+
+func extractCoverFromM4A(filePath string) ([]byte, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	fileSize := fi.Size()
+
+	ilst, err := findM4AIlstAtom(f, fileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	bodyStart := ilst.offset + ilst.headerSize
+	bodySize := ilst.size - ilst.headerSize
+
+	covr, found, err := findAtomInRange(f, bodyStart, bodySize, "covr", fileSize)
+	if err != nil || !found {
+		return nil, fmt.Errorf("cover atom not found")
+	}
+
+	dataStart := covr.offset + covr.headerSize
+	dataSize := covr.size - covr.headerSize
+
+	dataAtom, found, err := findAtomInRange(f, dataStart, dataSize, "data", fileSize)
+	if err != nil || !found {
+		return nil, fmt.Errorf("data atom not found in cover")
+	}
+
+	// data atom: header + 4 bytes type indicator + 4 bytes locale
+	imgStart := dataAtom.offset + dataAtom.headerSize + 8
+	imgLen := dataAtom.size - dataAtom.headerSize - 8
+	if imgLen <= 0 {
+		return nil, fmt.Errorf("empty cover data")
+	}
+
+	buf := make([]byte, imgLen)
+	if _, err := f.ReadAt(buf, imgStart); err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+// findM4AIlstAtom locates the ilst atom that holds all iTunes-style tags.
+// It tries two common layouts:
+//  1. moov > udta > meta > ilst  (iTunes, FFmpeg default)
+//  2. moov > meta > ilst         (some encoders omit the udta wrapper)
+func findM4AIlstAtom(f *os.File, fileSize int64) (atomHeader, error) {
+	moov, found, err := findAtomInRange(f, 0, fileSize, "moov", fileSize)
+	if err != nil || !found {
+		return atomHeader{}, fmt.Errorf("moov not found")
+	}
+
+	moovBodyStart := moov.offset + moov.headerSize
+	moovBodySize := moov.size - moov.headerSize
+
+	// Path 1: moov > udta > meta > ilst
+	if udta, ok, _ := findAtomInRange(f, moovBodyStart, moovBodySize, "udta", fileSize); ok {
+		udtaBodyStart := udta.offset + udta.headerSize
+		udtaBodySize := udta.size - udta.headerSize
+		if meta, ok2, _ := findAtomInRange(f, udtaBodyStart, udtaBodySize, "meta", fileSize); ok2 {
+			metaBodyStart := meta.offset + meta.headerSize + 4
+			metaBodySize := meta.size - meta.headerSize - 4
+			if ilst, ok3, _ := findAtomInRange(f, metaBodyStart, metaBodySize, "ilst", fileSize); ok3 {
+				return ilst, nil
+			}
+		}
+	}
+
+	// Path 2: moov > meta > ilst (no udta wrapper)
+	if meta, ok, _ := findAtomInRange(f, moovBodyStart, moovBodySize, "meta", fileSize); ok {
+		metaBodyStart := meta.offset + meta.headerSize + 4
+		metaBodySize := meta.size - meta.headerSize - 4
+		if ilst, ok2, _ := findAtomInRange(f, metaBodyStart, metaBodySize, "ilst", fileSize); ok2 {
+			return ilst, nil
+		}
+	}
+
+	return atomHeader{}, fmt.Errorf("ilst not found (tried moov>udta>meta>ilst and moov>meta>ilst)")
+}
+
+func readM4ADataAtomPayload(f *os.File, dataAtom atomHeader) ([]byte, error) {
+	payloadStart := dataAtom.offset + dataAtom.headerSize + 8
+	payloadLen := dataAtom.size - dataAtom.headerSize - 8
+	if payloadLen <= 0 {
+		return nil, fmt.Errorf("empty data atom in %s", dataAtom.typ)
+	}
+
+	buf := make([]byte, payloadLen)
+	if _, err := f.ReadAt(buf, payloadStart); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func readM4ADataPayload(f *os.File, parent atomHeader, fileSize int64) ([]byte, error) {
+	dataStart := parent.offset + parent.headerSize
+	dataSize := parent.size - parent.headerSize
+
+	dataAtom, found, err := findAtomInRange(f, dataStart, dataSize, "data", fileSize)
+	if err != nil || !found {
+		return nil, fmt.Errorf("data atom not found in %s", parent.typ)
+	}
+	return readM4ADataAtomPayload(f, dataAtom)
+}
+
+func readM4ATextValue(f *os.File, parent atomHeader, fileSize int64) (string, error) {
+	payload, err := readM4ADataPayload(f, parent, fileSize)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(strings.TrimRight(string(payload), "\x00")), nil
+}
+
+func readM4AIndexValue(f *os.File, parent atomHeader, fileSize int64) (int, error) {
+	payload, err := readM4ADataPayload(f, parent, fileSize)
+	if err != nil {
+		return 0, err
+	}
+	if len(payload) < 4 {
+		return 0, fmt.Errorf("index payload too short in %s", parent.typ)
+	}
+	return int(binary.BigEndian.Uint16(payload[2:4])), nil
+}
+
+func readM4AFreeformValue(f *os.File, parent atomHeader, fileSize int64) (string, string, error) {
+	start := parent.offset + parent.headerSize
+	end := parent.offset + parent.size
+
+	var nameValue string
+	var dataValue string
+	for pos := start; pos+8 <= end; {
+		header, err := readAtomHeaderAt(f, pos, fileSize)
+		if err != nil {
+			return "", "", err
+		}
+		if header.size == 0 {
+			header.size = end - pos
+		}
+		if header.size < header.headerSize {
+			return "", "", fmt.Errorf("invalid atom size for %s", header.typ)
+		}
+
+		switch header.typ {
+		case "mean":
+			// Domain qualifier (e.g. "com.apple.iTunes") — not needed, skip.
+		case "name":
+			// The "name" atom payload is: 4-byte version/flags, then raw UTF-8 text.
+			// It does NOT contain a nested "data" atom, so read the payload directly.
+			payloadStart := header.offset + header.headerSize + 4
+			payloadLen := header.size - header.headerSize - 4
+			if payloadLen > 0 {
+				buf := make([]byte, payloadLen)
+				if _, readErr := f.ReadAt(buf, payloadStart); readErr == nil {
+					nameValue = strings.TrimSpace(strings.TrimRight(string(buf), "\x00"))
+				}
+			}
+		case "data":
+			payload, payloadErr := readM4ADataAtomPayload(f, header)
+			if payloadErr == nil {
+				dataValue = strings.TrimSpace(strings.TrimRight(string(payload), "\x00"))
+			}
+		}
+
+		pos += header.size
+	}
+
+	if nameValue == "" || dataValue == "" {
+		return "", "", fmt.Errorf("freeform M4A tag incomplete")
+	}
+
+	return nameValue, dataValue, nil
 }
 
 func extractLyricsFromSidecarLRC(filePath string) (string, error) {
@@ -743,15 +1044,28 @@ func GetM4AQuality(filePath string) (AudioQuality, error) {
 		return AudioQuality{}, err
 	}
 
-	buf := make([]byte, 24)
+	buf := make([]byte, 32)
 	if _, err := f.ReadAt(buf, sampleOffset); err != nil {
 		return AudioQuality{}, fmt.Errorf("failed to read audio sample entry: %w", err)
 	}
 
-	sampleRate := int(buf[22])<<8 | int(buf[23])
-	bitDepth := 16
-	if atomType == "alac" {
-		bitDepth = 24
+	// AudioSampleEntry layout from the box type field:
+	//   [0:4]   type ("mp4a"/"alac")
+	//   [4:10]  SampleEntry.reserved
+	//   [10:12] data_reference_index
+	//   [12:20] reserved[8]
+	//   [20:22] channelcount
+	//   [22:24] samplesize (bit depth)
+	//   [24:26] pre_defined
+	//   [26:28] reserved
+	//   [28:32] samplerate (16.16 fixed-point)
+	sampleRate := int(buf[28])<<8 | int(buf[29])
+	bitDepth := int(buf[22])<<8 | int(buf[23])
+	if bitDepth <= 0 {
+		bitDepth = 16
+		if atomType == "alac" {
+			bitDepth = 24
+		}
 	}
 
 	return AudioQuality{BitDepth: bitDepth, SampleRate: sampleRate}, nil
@@ -874,7 +1188,7 @@ func findAudioSampleEntry(f *os.File, start, end, fileSize int64) (int64, string
 
 		if bestIdx >= 0 {
 			absolute := readPos - int64(len(tail)) + int64(bestIdx)
-			if absolute+24 > fileSize {
+			if absolute+32 > fileSize {
 				return 0, "", fmt.Errorf("audio info not found in M4A file")
 			}
 			return absolute, bestType, nil
