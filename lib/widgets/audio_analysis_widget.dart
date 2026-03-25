@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -13,9 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:spotiflac_android/l10n/l10n.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
 
-// ---------------------------------------------------------------------------
 // Data models
-// ---------------------------------------------------------------------------
 
 class AudioAnalysisData {
   final String filePath;
@@ -47,10 +46,42 @@ class AudioAnalysisData {
     required this.totalSamples,
     this.spectrum,
   });
+
+  Map<String, dynamic> toJson() => {
+    'filePath': filePath,
+    'fileSize': fileSize,
+    'sampleRate': sampleRate,
+    'channels': channels,
+    'bitsPerSample': bitsPerSample,
+    'duration': duration,
+    'bitrate': bitrate,
+    'bitDepth': bitDepth,
+    'dynamicRange': dynamicRange,
+    'peakAmplitude': peakAmplitude,
+    'rmsLevel': rmsLevel,
+    'totalSamples': totalSamples,
+  };
+
+  factory AudioAnalysisData.fromJson(Map<String, dynamic> json) {
+    return AudioAnalysisData(
+      filePath: json['filePath'] as String,
+      fileSize: json['fileSize'] as int,
+      sampleRate: json['sampleRate'] as int,
+      channels: json['channels'] as int,
+      bitsPerSample: json['bitsPerSample'] as int,
+      duration: (json['duration'] as num).toDouble(),
+      bitrate: json['bitrate'] as int,
+      bitDepth: json['bitDepth'] as String,
+      dynamicRange: (json['dynamicRange'] as num).toDouble(),
+      peakAmplitude: (json['peakAmplitude'] as num).toDouble(),
+      rmsLevel: (json['rmsLevel'] as num).toDouble(),
+      totalSamples: json['totalSamples'] as int,
+    );
+  }
 }
 
 class SpectrogramData {
-  final List<Float64List> magnitudes; // [timeSlice][freqBin]
+  final List<Float64List> magnitudes;
   final int sampleRate;
   final int freqBins;
   final double duration;
@@ -67,9 +98,7 @@ class SpectrogramData {
   });
 }
 
-// ---------------------------------------------------------------------------
 // Audio Analysis Card Widget
-// ---------------------------------------------------------------------------
 
 class AudioAnalysisCard extends StatefulWidget {
   final String filePath;
@@ -83,6 +112,7 @@ class AudioAnalysisCard extends StatefulWidget {
 class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
   AudioAnalysisData? _data;
   bool _analyzing = false;
+  bool _checkingCache = true;
   String? _error;
   ui.Image? _spectrogramImage;
 
@@ -103,9 +133,42 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    if (_isSupported) {
+      _tryLoadFromCache();
+    }
+  }
+
+  @override
   void dispose() {
     _spectrogramImage?.dispose();
     super.dispose();
+  }
+
+  Future<void> _tryLoadFromCache() async {
+    try {
+      final cached = await _loadFromCache(widget.filePath);
+      if (cached != null && mounted) {
+        setState(() {
+          _data = cached;
+          _checkingCache = false;
+        });
+        if (cached.spectrum != null && cached.spectrum!.sliceCount > 0) {
+          final image = await _renderSpectrogramToImage(cached.spectrum!);
+          if (mounted) {
+            setState(() {
+              _spectrogramImage?.dispose();
+              _spectrogramImage = image;
+            });
+          }
+        }
+        return;
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _checkingCache = false);
+    }
   }
 
   Future<void> _analyze() async {
@@ -116,7 +179,17 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
     });
 
     try {
-      final data = await _runAnalysis(widget.filePath);
+      // Try loading from cache first
+      final cached = await _loadFromCache(widget.filePath);
+      AudioAnalysisData data;
+
+      if (cached != null) {
+        data = cached;
+      } else {
+        data = await _runAnalysis(widget.filePath);
+        // Save to cache (fire-and-forget)
+        _saveToCache(widget.filePath, data);
+      }
 
       ui.Image? image;
       if (data.spectrum != null && data.spectrum!.sliceCount > 0) {
@@ -141,15 +214,64 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Analysis pipeline: FFprobe metadata + FFmpeg PCM decode + FFT in isolate
-  // -------------------------------------------------------------------------
+  // Analysis cache
+
+  static String _cacheKey(String filePath) {
+    var hash = 0xcbf29ce484222325;
+    for (final byte in utf8.encode(filePath)) {
+      hash ^= byte;
+      hash = (hash * 0x100000001b3) & 0x7FFFFFFFFFFFFFFF;
+    }
+    return hash.toRadixString(16);
+  }
+
+  static Future<Directory> _cacheDir() async {
+    final appSupport = await getApplicationSupportDirectory();
+    final dir = Directory('${appSupport.path}/audio_analysis_cache');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
+  static Future<AudioAnalysisData?> _loadFromCache(String filePath) async {
+    try {
+      final dir = await _cacheDir();
+      final key = _cacheKey(filePath);
+      final file = File('${dir.path}/$key.json');
+      if (!await file.exists()) return null;
+
+      final json = jsonDecode(await file.readAsString());
+      final cachedSize = json['fileSize'] as int;
+
+      if (!filePath.startsWith('content://')) {
+        final currentSize = await File(filePath).length();
+        if (currentSize != cachedSize) return null;
+      }
+
+      return AudioAnalysisData.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _saveToCache(
+    String filePath,
+    AudioAnalysisData data,
+  ) async {
+    try {
+      final dir = await _cacheDir();
+      final key = _cacheKey(filePath);
+      final file = File('${dir.path}/$key.json');
+      await file.writeAsString(jsonEncode(data.toJson()));
+    } catch (_) {}
+  }
+
+  // Analysis pipeline
 
   Future<AudioAnalysisData> _runAnalysis(String filePath) async {
-    // Suppress FFmpegKit verbose logging (metadata/lyrics dump)
     await FFmpegKitConfig.setLogLevel(Level.avLogError);
 
-    // Handle SAF content:// URIs by copying to temp first
     String workingPath = filePath;
     String? tempCopy;
     if (filePath.startsWith('content://')) {
@@ -161,10 +283,8 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
     }
 
     try {
-      // 1. Get metadata via FFprobe
       final info = await _getMediaInfo(workingPath);
 
-      // 2. Decode to raw PCM via FFmpeg
       final tempDir = await getTemporaryDirectory();
       final pcmPath =
           '${tempDir.path}/analysis_pcm_${DateTime.now().millisecondsSinceEpoch}.raw';
@@ -172,7 +292,6 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
       try {
         await _decodeToPCM(workingPath, pcmPath, info.sampleRate);
 
-        // 3. Read PCM + compute FFT + metrics in isolate
         final pcmBytes = await File(pcmPath).readAsBytes();
         final result = await compute(
           _analyzeInIsolate,
@@ -182,6 +301,10 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
             bitsPerSample: info.bitsPerSample,
           ),
         );
+
+        // Total samples from file metadata (not truncated PCM)
+        final trueTotalSamples =
+            (info.duration * info.sampleRate * info.channels).round();
 
         return AudioAnalysisData(
           filePath: filePath,
@@ -197,7 +320,7 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
           dynamicRange: result.dynamicRange,
           peakAmplitude: result.peakAmplitude,
           rmsLevel: result.rmsLevel,
-          totalSamples: result.totalSamples,
+          totalSamples: trueTotalSamples,
           spectrum: result.spectrum,
         );
       } finally {
@@ -211,7 +334,6 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
           await File(tempCopy).delete();
         } catch (_) {}
       }
-      // Restore default log level
       await FFmpegKitConfig.setLogLevel(Level.avLogInfo);
     }
   }
@@ -257,7 +379,6 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
           int.tryParse(props['bits_per_sample']?.toString() ?? '') ?? 0;
     }
 
-    // For lossy formats, infer bit depth from sample format
     if (bitsPerSample == 0) {
       final sampleFmt = props['sample_fmt']?.toString() ?? '';
       if (sampleFmt.contains('16') ||
@@ -288,18 +409,25 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
     String outputPath,
     int sampleRate,
   ) async {
-    // Decode to mono 16-bit signed LE PCM, limit to ~10M samples
     final maxDuration = sampleRate > 0 ? (10000000 / sampleRate) : 300;
 
     final session = await FFmpegKit.executeWithArguments([
-      '-loglevel', 'error',
-      '-i', inputPath,
-      '-t', maxDuration.toStringAsFixed(1),
-      '-ac', '1', // mono
-      '-ar', sampleRate.toString(),
-      '-f', 's16le', // 16-bit signed little-endian PCM
-      '-acodec', 'pcm_s16le',
-      '-y', outputPath,
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-t',
+      maxDuration.toStringAsFixed(1),
+      '-ac',
+      '1',
+      '-ar',
+      sampleRate.toString(),
+      '-f',
+      's16le',
+      '-acodec',
+      'pcm_s16le',
+      '-y',
+      outputPath,
     ]);
 
     final returnCode = await session.getReturnCode();
@@ -339,6 +467,9 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
 
     final cs = Theme.of(context).colorScheme;
     final l10n = context.l10n;
+
+    // Still checking cache, show nothing yet
+    if (_checkingCache) return const SizedBox.shrink();
 
     if (_analyzing) {
       return Card(
@@ -444,9 +575,7 @@ class _AudioAnalysisCardState extends State<AudioAnalysisCard> {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Internal types
-// ---------------------------------------------------------------------------
 
 class _MediaInfo {
   final int fileSize;
@@ -494,14 +623,11 @@ class _AnalysisResult {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Isolate: PCM → metrics + FFT spectrogram (all CPU, no GPU)
-// ---------------------------------------------------------------------------
+// Isolate: PCM analysis + FFT spectrogram
 
 _AnalysisResult _analyzeInIsolate(_AnalysisParams params) {
-  // Decode 16-bit signed LE PCM to normalized float samples
   final byteData = ByteData.sublistView(params.pcmBytes);
-  final sampleCount = params.pcmBytes.length ~/ 2; // 16-bit = 2 bytes
+  final sampleCount = params.pcmBytes.length ~/ 2;
   final samples = Float64List(sampleCount);
 
   for (int i = 0; i < sampleCount; i++) {
@@ -509,7 +635,6 @@ _AnalysisResult _analyzeInIsolate(_AnalysisParams params) {
     samples[i] = raw / 32768.0;
   }
 
-  // Audio metrics
   double peak = 0;
   double sumSquares = 0;
   for (int i = 0; i < samples.length; i++) {
@@ -522,7 +647,6 @@ _AnalysisResult _analyzeInIsolate(_AnalysisParams params) {
   final rms = math.sqrt(sumSquares / samples.length);
   final rmsDB = rms > 0 ? 20.0 * math.log(rms) / math.ln10 : -100.0;
 
-  // FFT spectrogram
   SpectrogramData? spectrum;
   if (samples.length >= 8192) {
     spectrum = _computeSpectrum(samples, params.sampleRate);
@@ -556,17 +680,14 @@ SpectrogramData _computeSpectrum(Float64List samples, int sampleRate) {
     final start = i * samplesPerSlice;
     if (start + fftSize > samples.length) break;
 
-    // Apply Hann window
     final windowed = Float64List(fftSize);
     for (int j = 0; j < fftSize; j++) {
       final w = 0.5 * (1.0 - math.cos(2.0 * math.pi * j / (fftSize - 1)));
       windowed[j] = samples[start + j] * w;
     }
 
-    // FFT
     final spectrum = _fft(windowed);
 
-    // Magnitude in dB
     final mags = Float64List(freqBins);
     for (int j = 0; j < freqBins; j++) {
       final re = spectrum[j * 2];
@@ -588,16 +709,14 @@ SpectrogramData _computeSpectrum(Float64List samples, int sampleRate) {
   );
 }
 
-/// Cooley-Tukey radix-2 FFT. Returns interleaved [re0, im0, re1, im1, ...].
+/// Cooley-Tukey radix-2 FFT. Returns interleaved [re, im, re, im, ...].
 Float64List _fft(Float64List realInput) {
   final n = realInput.length;
-  // Interleaved complex: [re, im, re, im, ...]
   final data = Float64List(n * 2);
   for (int i = 0; i < n; i++) {
     data[i * 2] = realInput[i];
   }
 
-  // Bit-reversal permutation
   int j = 0;
   for (int i = 0; i < n; i++) {
     if (i < j) {
@@ -616,7 +735,6 @@ Float64List _fft(Float64List realInput) {
     j += m;
   }
 
-  // Iterative FFT
   for (int size = 2; size <= n; size <<= 1) {
     final halfSize = size >> 1;
     final angle = -2.0 * math.pi / size;
@@ -649,9 +767,7 @@ Float64List _fft(Float64List realInput) {
   return data;
 }
 
-// ---------------------------------------------------------------------------
-// Audio Info Card (metrics)
-// ---------------------------------------------------------------------------
+// Audio Info Card
 
 class _AudioInfoCard extends StatelessWidget {
   final AudioAnalysisData data;
@@ -829,9 +945,7 @@ class _MetricChip extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Spectrogram View
-// ---------------------------------------------------------------------------
 
 class _SpectrogramView extends StatelessWidget {
   final ui.Image image;
@@ -897,9 +1011,7 @@ class _ImagePainter extends CustomPainter {
   bool shouldRepaint(covariant _ImagePainter old) => old.image != image;
 }
 
-// ---------------------------------------------------------------------------
 // Spectrogram pixel-buffer rendering (runs in isolate)
-// ---------------------------------------------------------------------------
 
 class _SpectrogramRenderParams {
   final SpectrogramData spectrum;
@@ -919,7 +1031,7 @@ Uint8List _renderSpectrogramPixels(_SpectrogramRenderParams params) {
   final spectrum = params.spectrum;
   final pixels = Uint8List(w * h * 4);
 
-  // Fill black with full alpha
+  // Fill black
   for (int i = 3; i < pixels.length; i += 4) {
     pixels[i] = 255;
   }
@@ -929,7 +1041,7 @@ Uint8List _renderSpectrogramPixels(_SpectrogramRenderParams params) {
 
   final freqBins = spectrum.freqBins;
 
-  // Calculate dB range
+  // dB range
   double minDB = 0;
   double maxDB = -200;
   for (final slice in slices) {
