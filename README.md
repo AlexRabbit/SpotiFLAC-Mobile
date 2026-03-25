@@ -17,7 +17,7 @@
 <div align="center">
 
 [![GitHub Release](https://img.shields.io/github/v/release/zarzet/SpotiFLAC-Mobile?style=for-the-badge&logo=github)](https://github.com/zarzet/SpotiFLAC-Mobile/releases)
-[![VirusTotal](https://img.shields.io/badge/VirusTotal-Safe-brightgreen?style=for-the-badge&logo=virustotal)](https://www.virustotal.com/gui/file/63a445a956fa71ea347ad3695a62d543e14e341933326b9dbb9a15d79614ef58)
+[![VirusTotal](https://img.shields.io/badge/VirusTotal-Safe-brightgreen?style=for-the-badge&logo=virustotal)](https://www.virustotal.com/gui/file/cc11355330c76f97548b8d26452b91746db9d9c1edbcfc4c18250133484d1487)
 [![Crowdin](https://img.shields.io/badge/HELP%20TRANSLATE%20ON-CROWDIN-%2321252b?style=for-the-badge&logo=crowdin)](https://crowdin.com/project/spotiflac-mobile)
 
 [![Telegram Channel](https://img.shields.io/badge/CHANNEL-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/spotiflac)
