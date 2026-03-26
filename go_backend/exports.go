@@ -3111,17 +3111,17 @@ func GetPostProcessingProvidersJSON() (string, error) {
 }
 
 func InitExtensionStoreJSON(cacheDir string) error {
-	InitExtensionStore(cacheDir)
+	initExtensionStore(cacheDir)
 	return nil
 }
 
 func SetStoreRegistryURLJSON(registryURL string) error {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return fmt.Errorf("extension store not initialized")
 	}
 
-	resolved, err := ResolveRegistryURL(registryURL)
+	resolved, err := resolveRegistryURL(registryURL)
 	if err != nil {
 		return err
 	}
@@ -3130,32 +3130,32 @@ func SetStoreRegistryURLJSON(registryURL string) error {
 		return err
 	}
 
-	store.SetRegistryURL(resolved)
+	store.setRegistryURL(resolved)
 	return nil
 }
 
 func ClearStoreRegistryURLJSON() error {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return fmt.Errorf("extension store not initialized")
 	}
 
-	store.SetRegistryURL("")
-	store.ClearCache()
+	store.setRegistryURL("")
+	store.clearCache()
 	return nil
 }
 
 func GetStoreRegistryURLJSON() (string, error) {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return "", fmt.Errorf("extension store not initialized")
 	}
 
-	return store.GetRegistryURL(), nil
+	return store.getRegistryURL(), nil
 }
 
 func GetStoreExtensionsJSON(forceRefresh bool) (string, error) {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return "", fmt.Errorf("extension store not initialized")
 	}
@@ -3174,12 +3174,12 @@ func GetStoreExtensionsJSON(forceRefresh bool) (string, error) {
 }
 
 func SearchStoreExtensionsJSON(query, category string) (string, error) {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return "", fmt.Errorf("extension store not initialized")
 	}
 
-	extensions, err := store.SearchExtensions(query, category)
+	extensions, err := store.searchExtensions(query, category)
 	if err != nil {
 		return "", err
 	}
@@ -3193,12 +3193,12 @@ func SearchStoreExtensionsJSON(query, category string) (string, error) {
 }
 
 func GetStoreCategoriesJSON() (string, error) {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return "", fmt.Errorf("extension store not initialized")
 	}
 
-	categories := store.GetCategories()
+	categories := store.getCategories()
 	jsonBytes, err := json.Marshal(categories)
 	if err != nil {
 		return "", err
@@ -3217,7 +3217,7 @@ func buildStoreExtensionDestPath(destDir, extensionID string) (string, error) {
 }
 
 func DownloadStoreExtensionJSON(extensionID, destDir string) (string, error) {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return "", fmt.Errorf("extension store not initialized")
 	}
@@ -3226,7 +3226,7 @@ func DownloadStoreExtensionJSON(extensionID, destDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = store.DownloadExtension(extensionID, destPath)
+	err = store.downloadExtension(extensionID, destPath)
 	if err != nil {
 		return "", err
 	}
@@ -3235,12 +3235,12 @@ func DownloadStoreExtensionJSON(extensionID, destDir string) (string, error) {
 }
 
 func ClearStoreCacheJSON() error {
-	store := GetExtensionStore()
+	store := getExtensionStore()
 	if store == nil {
 		return fmt.Errorf("extension store not initialized")
 	}
 
-	store.ClearCache()
+	store.clearCache()
 	return nil
 }
 
