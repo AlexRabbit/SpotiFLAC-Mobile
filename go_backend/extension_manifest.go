@@ -115,6 +115,7 @@ type ExtensionManifest struct {
 	QualityOptions         []QualityOption        `json:"qualityOptions,omitempty"`
 	MinAppVersion          string                 `json:"minAppVersion,omitempty"`
 	SkipMetadataEnrichment bool                   `json:"skipMetadataEnrichment,omitempty"`
+	SkipLyrics             bool                   `json:"skipLyrics,omitempty"`
 	SkipBuiltInFallback    bool                   `json:"skipBuiltInFallback,omitempty"`
 	SearchBehavior         *SearchBehaviorConfig  `json:"searchBehavior,omitempty"`
 	URLHandler             *URLHandlerConfig      `json:"urlHandler,omitempty"`

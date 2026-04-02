@@ -33,6 +33,7 @@ class Extension {
   final bool hasDownloadProvider;
   final bool hasLyricsProvider;
   final bool skipMetadataEnrichment;
+  final bool skipLyrics;
   final SearchBehavior? searchBehavior;
   final URLHandler? urlHandler;
   final TrackMatching? trackMatching;
@@ -57,6 +58,7 @@ class Extension {
     this.hasDownloadProvider = false,
     this.hasLyricsProvider = false,
     this.skipMetadataEnrichment = false,
+    this.skipLyrics = false,
     this.searchBehavior,
     this.urlHandler,
     this.trackMatching,
@@ -94,6 +96,7 @@ class Extension {
       hasLyricsProvider: json['has_lyrics_provider'] as bool? ?? false,
       skipMetadataEnrichment:
           json['skip_metadata_enrichment'] as bool? ?? false,
+      skipLyrics: json['skip_lyrics'] as bool? ?? false,
       searchBehavior: json['search_behavior'] != null
           ? SearchBehavior.fromJson(
               json['search_behavior'] as Map<String, dynamic>,
@@ -134,6 +137,7 @@ class Extension {
     bool? hasDownloadProvider,
     bool? hasLyricsProvider,
     bool? skipMetadataEnrichment,
+    bool? skipLyrics,
     SearchBehavior? searchBehavior,
     URLHandler? urlHandler,
     TrackMatching? trackMatching,
@@ -159,6 +163,7 @@ class Extension {
       hasLyricsProvider: hasLyricsProvider ?? this.hasLyricsProvider,
       skipMetadataEnrichment:
           skipMetadataEnrichment ?? this.skipMetadataEnrichment,
+      skipLyrics: skipLyrics ?? this.skipLyrics,
       searchBehavior: searchBehavior ?? this.searchBehavior,
       urlHandler: urlHandler ?? this.urlHandler,
       trackMatching: trackMatching ?? this.trackMatching,
