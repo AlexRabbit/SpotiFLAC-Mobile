@@ -1044,13 +1044,14 @@ func (m *ExtensionManager) InvokeAction(extensionID string, actionName string) (
 		return nil, fmt.Errorf("extension not found: %s", extensionID)
 	}
 
-	if err := ext.ensureRuntimeReady(); err != nil {
-		return nil, err
-	}
-
 	if !ext.Enabled {
 		return nil, fmt.Errorf("extension is disabled")
 	}
+	vm, err := ext.lockReadyVM()
+	if err != nil {
+		return nil, err
+	}
+	defer ext.VMMu.Unlock()
 
 	script := fmt.Sprintf(`
 		(function() {
@@ -1070,7 +1071,7 @@ func (m *ExtensionManager) InvokeAction(extensionID string, actionName string) (
 		})()
 	`, actionName, actionName, actionName)
 
-	result, err := RunWithTimeoutAndRecover(ext.VM, script, DefaultJSTimeout)
+	result, err := RunWithTimeoutAndRecover(vm, script, DefaultJSTimeout)
 	if err != nil {
 		GoLog("[Extension] InvokeAction error for %s.%s: %v\n", extensionID, actionName, err)
 		return nil, fmt.Errorf("action failed: %v", err)
