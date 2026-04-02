@@ -2215,6 +2215,27 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     return _isrcRegex.hasMatch(value.toUpperCase());
   }
 
+  /// Returns true if any enabled extension matching [source] or [service]
+  /// declares `skipLyrics: true` in its manifest.
+  bool _shouldSkipLyrics(
+    ExtensionState extensionState,
+    String? source,
+    String? service,
+  ) {
+    final candidates = <String>{};
+    if (source != null && source.isNotEmpty) {
+      candidates.add(source.trim().toLowerCase());
+    }
+    if (service != null && service.isNotEmpty) {
+      candidates.add(service.trim().toLowerCase());
+    }
+    if (candidates.isEmpty) return false;
+    return extensionState.extensions.any(
+      (e) =>
+          e.enabled && e.skipLyrics && candidates.contains(e.id.toLowerCase()),
+    );
+  }
+
   String _newQueueItemId(Track track, {Set<String>? takenIds}) {
     final trimmedIsrc = track.isrc?.trim();
     final trimmedTrackId = track.id.trim();
@@ -3227,6 +3248,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     String? genre,
     String? label,
     String? copyright,
+    String? downloadService,
     bool writeExternalLrc = true,
   }) async {
     final settings = ref.read(settingsProvider);
@@ -3314,11 +3336,19 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       _log.d('Metadata map content: $metadata');
 
       final lyricsMode = settings.lyricsMode;
+      final extensionState = ref.read(extensionProvider);
+      final skipLyrics = _shouldSkipLyrics(
+        extensionState,
+        track.source,
+        downloadService,
+      );
       final shouldEmbedLyrics =
           settings.embedLyrics &&
+          !skipLyrics &&
           (lyricsMode == 'embed' || lyricsMode == 'both');
       final shouldSaveExternalLyrics =
           settings.embedLyrics &&
+          !skipLyrics &&
           (lyricsMode == 'external' || lyricsMode == 'both');
       final shouldFetchLyrics = shouldEmbedLyrics || shouldSaveExternalLyrics;
       String? lrcContent;
@@ -3453,6 +3483,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     String? genre,
     String? label,
     String? copyright,
+    String? downloadService,
   }) async {
     final settings = ref.read(settingsProvider);
     if (!settings.embedMetadata) {
@@ -3541,9 +3572,16 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       _log.d('MP3 Metadata map content: $metadata');
 
       final lyricsMode = settings.lyricsMode;
-      final shouldEmbed = lyricsMode == 'embed' || lyricsMode == 'both';
+      final mp3ExtState = ref.read(extensionProvider);
+      final mp3SkipLyrics = _shouldSkipLyrics(
+        mp3ExtState,
+        track.source,
+        downloadService,
+      );
+      final shouldEmbed =
+          !mp3SkipLyrics && (lyricsMode == 'embed' || lyricsMode == 'both');
       final shouldSaveExternal =
-          lyricsMode == 'external' || lyricsMode == 'both';
+          !mp3SkipLyrics && (lyricsMode == 'external' || lyricsMode == 'both');
 
       if (settings.embedLyrics && (shouldEmbed || shouldSaveExternal)) {
         try {
@@ -3639,6 +3677,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     String? genre,
     String? label,
     String? copyright,
+    String? downloadService,
   }) async {
     final settings = ref.read(settingsProvider);
     if (!settings.embedMetadata) {
@@ -3724,9 +3763,16 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       _log.d('Opus Metadata map content: $metadata');
 
       final lyricsMode = settings.lyricsMode;
-      final shouldEmbed = lyricsMode == 'embed' || lyricsMode == 'both';
+      final opusExtState = ref.read(extensionProvider);
+      final opusSkipLyrics = _shouldSkipLyrics(
+        opusExtState,
+        track.source,
+        downloadService,
+      );
+      final shouldEmbed =
+          !opusSkipLyrics && (lyricsMode == 'embed' || lyricsMode == 'both');
       final shouldSaveExternal =
-          lyricsMode == 'external' || lyricsMode == 'both';
+          !opusSkipLyrics && (lyricsMode == 'external' || lyricsMode == 'both');
 
       if (settings.embedLyrics && (shouldEmbed || shouldSaveExternal)) {
         try {
@@ -4685,7 +4731,14 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
           quality: quality,
           embedMetadata: metadataEmbeddingEnabled,
           artistTagMode: settings.artistTagMode,
-          embedLyrics: metadataEmbeddingEnabled && settings.embedLyrics,
+          embedLyrics:
+              metadataEmbeddingEnabled &&
+              settings.embedLyrics &&
+              !_shouldSkipLyrics(
+                extensionState,
+                trackToDownload.source,
+                item.service,
+              ),
           embedMaxQualityCover:
               metadataEmbeddingEnabled && settings.maxQualityCover,
           trackNumber: normalizedTrackNumber,
@@ -5010,6 +5063,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                         genre: backendGenre ?? genre,
                         label: backendLabel ?? label,
                         copyright: backendCopyright,
+                        downloadService: item.service,
                       );
                     } else {
                       await _embedMetadataToOpus(
@@ -5018,6 +5072,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                         genre: backendGenre ?? genre,
                         label: backendLabel ?? label,
                         copyright: backendCopyright,
+                        downloadService: item.service,
                       );
                     }
 
@@ -5104,6 +5159,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                         genre: backendGenre ?? genre,
                         label: backendLabel ?? label,
                         copyright: backendCopyright,
+                        downloadService: item.service,
                         writeExternalLrc: false,
                       );
 
@@ -5197,6 +5253,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                       genre: backendGenre ?? genre,
                       label: backendLabel ?? label,
                       copyright: backendCopyright,
+                      downloadService: item.service,
                     );
                   } else {
                     await _embedMetadataToOpus(
@@ -5205,6 +5262,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                       genre: backendGenre ?? genre,
                       label: backendLabel ?? label,
                       copyright: backendCopyright,
+                      downloadService: item.service,
                     );
                   }
                   _log.d('Metadata embedded successfully');
@@ -5275,6 +5333,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                           genre: backendGenre ?? genre,
                           label: backendLabel ?? label,
                           copyright: backendCopyright,
+                          downloadService: item.service,
                         );
                         _log.d('Metadata and cover embedded successfully');
                       } catch (e) {
@@ -5340,6 +5399,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   genre: backendGenre ?? genre,
                   label: backendLabel ?? label,
                   copyright: backendCopyright,
+                  downloadService: item.service,
                 );
               } else if (isOpusFile) {
                 await _embedMetadataToOpus(
@@ -5348,6 +5408,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   genre: backendGenre ?? genre,
                   label: backendLabel ?? label,
                   copyright: backendCopyright,
+                  downloadService: item.service,
                 );
               } else {
                 await _embedMetadataAndCover(
@@ -5356,6 +5417,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   genre: backendGenre ?? genre,
                   label: backendLabel ?? label,
                   copyright: backendCopyright,
+                  downloadService: item.service,
                   writeExternalLrc: false,
                 );
               }
@@ -5420,6 +5482,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
               genre: backendGenre ?? genre,
               label: backendLabel ?? label,
               copyright: backendCopyright,
+              downloadService: item.service,
             );
             _log.d('Local FLAC metadata embedding completed');
           } catch (e) {
@@ -5500,6 +5563,11 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         final shouldSaveExternalLrc =
             metadataEmbeddingEnabled &&
             settings.embedLyrics &&
+            !_shouldSkipLyrics(
+              extensionState,
+              trackToDownload.source,
+              item.service,
+            ) &&
             (lyricsMode == 'external' || lyricsMode == 'both');
         if (shouldSaveExternalLrc &&
             effectiveSafMode &&
