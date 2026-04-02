@@ -2302,11 +2302,11 @@
   "@settingsLocalLibrarySubtitle": {
     "description": "Subtitle for local library settings"
   },
-  "settingsCache": "Storage & Cache",
+  "settingsCache": "Almacenamiento & Caché",
   "@settingsCache": {
     "description": "Settings menu item - cache management"
   },
-  "settingsCacheSubtitle": "View size and clear cached data",
+  "settingsCacheSubtitle": "Ver tamaño y borrar datos en caché",
   "@settingsCacheSubtitle": {
     "description": "Subtitle for cache management menu"
   },
