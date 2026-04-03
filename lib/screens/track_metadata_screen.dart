@@ -22,6 +22,7 @@ import 'package:spotiflac_android/l10n/l10n.dart';
 import 'package:spotiflac_android/utils/logger.dart';
 import 'package:spotiflac_android/utils/lyrics_metadata_helper.dart';
 import 'package:spotiflac_android/utils/mime_utils.dart';
+import 'package:spotiflac_android/utils/image_cache_utils.dart';
 import 'package:spotiflac_android/utils/string_utils.dart';
 import 'package:spotiflac_android/widgets/audio_analysis_widget.dart';
 
@@ -29,11 +30,11 @@ final _log = AppLogger('TrackMetadata');
 
 class _EmbeddedCoverPreviewCacheEntry {
   final String previewPath;
-  final int? fileModTime;
+  final String? sourceValidationToken;
 
   const _EmbeddedCoverPreviewCacheEntry({
     required this.previewPath,
-    this.fileModTime,
+    this.sourceValidationToken,
   });
 }
 
@@ -119,70 +120,75 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
     );
   }
 
-  int? _readLocalFileModTimeMsSync(String path) {
+  Future<String?> _readLocalFileValidationToken(String path) async {
     if (path.isEmpty || isContentUri(path) || _isVolatileSafTempPath(path)) {
       return null;
     }
     try {
-      return File(path).statSync().modified.millisecondsSinceEpoch;
+      final stat = await fileStat(path);
+      if (stat == null) return null;
+      return '${stat.modified?.millisecondsSinceEpoch ?? 0}:${stat.size ?? 0}';
     } catch (_) {
       return null;
     }
   }
 
-  void _cacheEmbeddedCoverPreview(
+  Future<void> _cacheEmbeddedCoverPreview(
     String cacheKey,
     String sourcePath,
     String previewPath,
-  ) {
-    final fileModTime = _readLocalFileModTimeMsSync(sourcePath);
+  ) async {
+    final sourceValidationToken = await _readLocalFileValidationToken(
+      sourcePath,
+    );
     final existing = _embeddedCoverPreviewCache[cacheKey];
     _embeddedCoverPreviewCache[cacheKey] = _EmbeddedCoverPreviewCacheEntry(
       previewPath: previewPath,
-      fileModTime: fileModTime,
+      sourceValidationToken: sourceValidationToken,
     );
     if (existing != null && existing.previewPath != previewPath) {
-      _cleanupTempFileAndParentSyncIfNotCached(existing.previewPath);
+      await _cleanupTempFileAndParentIfNotCached(existing.previewPath);
     }
 
     while (_embeddedCoverPreviewCache.length > _maxCoverPreviewCacheEntries) {
       final oldestKey = _embeddedCoverPreviewCache.keys.first;
       final removed = _embeddedCoverPreviewCache.remove(oldestKey);
       if (removed != null) {
-        _cleanupTempFileAndParentSyncIfNotCached(removed.previewPath);
+        await _cleanupTempFileAndParentIfNotCached(removed.previewPath);
       }
     }
   }
 
-  void _invalidateEmbeddedCoverPreviewCacheForPath(String cacheKey) {
+  Future<void> _invalidateEmbeddedCoverPreviewCacheForPath(
+    String cacheKey,
+  ) async {
     if (cacheKey.isEmpty) return;
     final removed = _embeddedCoverPreviewCache.remove(cacheKey);
     if (removed != null) {
-      _cleanupTempFileAndParentSyncIfNotCached(removed.previewPath);
+      await _cleanupTempFileAndParentIfNotCached(removed.previewPath);
     }
   }
 
-  String? _getCachedEmbeddedCoverPreviewPathIfValid(
+  Future<String?> _getCachedEmbeddedCoverPreviewPathIfValid(
     String cacheKey,
     String sourcePath,
-  ) {
+  ) async {
     if (cacheKey.isEmpty) return null;
     final cached = _embeddedCoverPreviewCache[cacheKey];
     if (cached == null) return null;
 
-    final previewFile = File(cached.previewPath);
-    if (!previewFile.existsSync()) {
+    if (!await fileExists(cached.previewPath)) {
       _embeddedCoverPreviewCache.remove(cacheKey);
       return null;
     }
 
     if (!isContentUri(sourcePath) && !_isVolatileSafTempPath(sourcePath)) {
-      final currentModTime = _readLocalFileModTimeMsSync(sourcePath);
-      if (currentModTime != null &&
-          cached.fileModTime != null &&
-          currentModTime != cached.fileModTime) {
+      final currentToken = await _readLocalFileValidationToken(sourcePath);
+      if (currentToken != null &&
+          cached.sourceValidationToken != null &&
+          currentToken != cached.sourceValidationToken) {
         _embeddedCoverPreviewCache.remove(cacheKey);
-        _cleanupTempFileAndParentSyncIfNotCached(cached.previewPath);
+        await _cleanupTempFileAndParentIfNotCached(cached.previewPath);
         return null;
       }
     }
@@ -199,7 +205,7 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
 
   @override
   void dispose() {
-    _cleanupTempFileAndParentSyncIfNotCached(_embeddedCoverPreviewPath);
+    unawaited(_cleanupTempFileAndParentIfNotCached(_embeddedCoverPreviewPath));
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -251,7 +257,7 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
       unawaited(_refreshResolvedAudioMetadataFromFile());
     }
     if (mounted && exists && !_hasPath(_embeddedCoverPreviewPath)) {
-      final cachedPath = _getCachedEmbeddedCoverPreviewPathIfValid(
+      final cachedPath = await _getCachedEmbeddedCoverPreviewPathIfValid(
         _coverCacheKey,
         cleanFilePath,
       );
@@ -374,32 +380,11 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
     }
   }
 
-  void _cleanupTempFileAndParentSync(String? path) {
-    if (!_hasPath(path)) return;
-    final file = File(path!);
-    try {
-      if (file.existsSync()) {
-        file.deleteSync();
-      }
-    } catch (_) {}
-    try {
-      final dir = file.parent;
-      if (dir.existsSync()) {
-        dir.deleteSync(recursive: true);
-      }
-    } catch (_) {}
-  }
-
-  void _cleanupTempFileAndParentSyncIfNotCached(String? path) {
-    if (_isCacheTrackedPath(path)) return;
-    _cleanupTempFileAndParentSync(path);
-  }
-
   Future<void> _refreshEmbeddedCoverPreview({bool force = false}) async {
     final cacheKey = _coverCacheKey;
     final sourcePath = cleanFilePath;
     if (!force) {
-      final cachedPath = _getCachedEmbeddedCoverPreviewPathIfValid(
+      final cachedPath = await _getCachedEmbeddedCoverPreviewPathIfValid(
         cacheKey,
         sourcePath,
       );
@@ -414,7 +399,7 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
     String? newPreviewPath;
     try {
       if (!_fileExists) {
-        _invalidateEmbeddedCoverPreviewCacheForPath(cacheKey);
+        await _invalidateEmbeddedCoverPreviewCacheForPath(cacheKey);
         await _cleanupTempFileAndParentIfNotCached(_embeddedCoverPreviewPath);
         if (mounted) {
           setState(() => _embeddedCoverPreviewPath = null);
@@ -422,7 +407,7 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
         return;
       }
       if (force) {
-        _invalidateEmbeddedCoverPreviewCacheForPath(cacheKey);
+        await _invalidateEmbeddedCoverPreviewCacheForPath(cacheKey);
       }
       final tempDir = await Directory.systemTemp.createTemp(
         'track_cover_preview_',
@@ -435,7 +420,7 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
       );
       if (result['error'] == null && await File(outputPath).exists()) {
         newPreviewPath = outputPath;
-        _cacheEmbeddedCoverPreview(cacheKey, sourcePath, outputPath);
+        await _cacheEmbeddedCoverPreview(cacheKey, sourcePath, outputPath);
       } else {
         try {
           await tempDir.delete(recursive: true);
@@ -880,16 +865,21 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
     double expandedHeight,
     bool showContent,
   ) {
+    final cacheWidth = coverCacheWidthForViewport(context);
     final coverChild = _hasPath(_embeddedCoverPreviewPath)
         ? Image.file(
             File(_embeddedCoverPreviewPath!),
             fit: BoxFit.cover,
+            cacheWidth: cacheWidth,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.low,
             errorBuilder: (_, _, _) => Container(color: colorScheme.surface),
           )
         : _coverUrl != null
         ? CachedNetworkImage(
             imageUrl: _coverUrl!,
             fit: BoxFit.cover,
+            memCacheWidth: cacheWidth,
             cacheManager: CoverCacheManager.instance,
             placeholder: (_, _) => Container(color: colorScheme.surface),
             errorWidget: (_, _, _) => Container(color: colorScheme.surface),
@@ -898,6 +888,9 @@ class _TrackMetadataScreenState extends ConsumerState<TrackMetadataScreen> {
         ? Image.file(
             File(_localCoverPath!),
             fit: BoxFit.cover,
+            cacheWidth: cacheWidth,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.low,
             errorBuilder: (_, _, _) => Container(color: colorScheme.surface),
           )
         : Container(
@@ -4392,29 +4385,15 @@ class _EditMetadataSheetState extends State<_EditMetadataSheet> {
     } catch (_) {}
   }
 
-  void _cleanupSelectedCoverTempSync() {
-    final dirPath = _selectedCoverTempDir;
-    _selectedCoverPath = null;
-    _selectedCoverTempDir = null;
-    _selectedCoverName = null;
-    if (dirPath == null || dirPath.isEmpty) return;
-    try {
-      final dir = Directory(dirPath);
-      if (dir.existsSync()) {
-        dir.deleteSync(recursive: true);
-      }
-    } catch (_) {}
-  }
-
-  void _cleanupCurrentCoverTempSync() {
+  Future<void> _cleanupCurrentCoverTemp() async {
     final dirPath = _currentCoverTempDir;
     _currentCoverPath = null;
     _currentCoverTempDir = null;
     if (dirPath == null || dirPath.isEmpty) return;
     try {
       final dir = Directory(dirPath);
-      if (dir.existsSync()) {
-        dir.deleteSync(recursive: true);
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
       }
     } catch (_) {}
   }
@@ -5132,8 +5111,8 @@ class _EditMetadataSheetState extends State<_EditMetadataSheet> {
 
   @override
   void dispose() {
-    _cleanupSelectedCoverTempSync();
-    _cleanupCurrentCoverTempSync();
+    unawaited(_cleanupSelectedCoverTemp());
+    unawaited(_cleanupCurrentCoverTemp());
     _titleCtrl.dispose();
     _artistCtrl.dispose();
     _albumCtrl.dispose();
@@ -5276,8 +5255,7 @@ class _EditMetadataSheetState extends State<_EditMetadataSheet> {
                 await tempDir.delete(recursive: true);
               } catch (_) {}
             }
-          } catch (_) {
-          }
+          } catch (_) {}
         }
 
         String? ffmpegResult;

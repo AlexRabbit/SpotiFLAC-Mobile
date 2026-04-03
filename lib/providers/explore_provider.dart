@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:spotiflac_android/services/platform_bridge.dart';
@@ -162,6 +163,52 @@ bool _isYTMusicQuickPicksItems(List<ExploreItem> items) {
   return true;
 }
 
+List<Map<String, Object?>> _normalizeExploreSectionsPayload(
+  dynamic rawSections,
+) {
+  if (rawSections is! List) return const [];
+  final sections = <Map<String, Object?>>[];
+  for (final rawSection in rawSections) {
+    if (rawSection is! Map) continue;
+    final section = Map<Object?, Object?>.from(rawSection);
+    final rawItems = section['items'];
+    final items = <Map<String, Object?>>[];
+    if (rawItems is List) {
+      for (final rawItem in rawItems) {
+        if (rawItem is! Map) continue;
+        items.add(Map<String, Object?>.from(rawItem));
+      }
+    }
+    sections.add({
+      'uri': section['uri']?.toString() ?? '',
+      'title': section['title']?.toString() ?? '',
+      'items': items,
+    });
+  }
+  return sections;
+}
+
+List<Map<String, Object?>> _decodeExploreCacheSections(String rawCache) {
+  final decoded = jsonDecode(rawCache);
+  if (decoded is! Map) return const [];
+  return _normalizeExploreSectionsPayload(decoded['sections']);
+}
+
+String _encodeExploreCacheSections(List<Map<String, Object?>> sections) {
+  return jsonEncode({'sections': sections});
+}
+
+List<ExploreSection> _buildExploreSectionsFromNormalizedPayload(
+  List<Map<String, Object?>> normalizedSections,
+) {
+  return normalizedSections
+      .map(
+        (section) =>
+            ExploreSection.fromJson(Map<String, dynamic>.from(section)),
+      )
+      .toList(growable: false);
+}
+
 class ExploreNotifier extends Notifier<ExploreState> {
   static const _cacheKey = 'explore_home_feed_cache';
   static const _cacheTsKey = 'explore_home_feed_ts';
@@ -179,11 +226,13 @@ class ExploreNotifier extends Notifier<ExploreState> {
       final cachedTs = prefs.getInt(_cacheTsKey);
       if (cached == null || cached.isEmpty) return;
 
-      final data = jsonDecode(cached) as Map<String, dynamic>;
-      final sectionsData = data['sections'] as List<dynamic>? ?? [];
-      final sections = sectionsData
-          .map((s) => ExploreSection.fromJson(s as Map<String, dynamic>))
-          .toList();
+      final normalizedSections = await compute(
+        _decodeExploreCacheSections,
+        cached,
+      );
+      final sections = _buildExploreSectionsFromNormalizedPayload(
+        normalizedSections,
+      );
 
       if (sections.isEmpty) return;
 
@@ -202,13 +251,18 @@ class ExploreNotifier extends Notifier<ExploreState> {
     }
   }
 
-  Future<void> _saveToCache(List<ExploreSection> sections) async {
+  Future<void> _saveToCache(
+    List<Map<String, Object?>> normalizedSections,
+  ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final data = {'sections': sections.map((s) => s.toJson()).toList()};
-      await prefs.setString(_cacheKey, jsonEncode(data));
+      final encoded = await compute(
+        _encodeExploreCacheSections,
+        normalizedSections,
+      );
+      await prefs.setString(_cacheKey, encoded);
       await prefs.setInt(_cacheTsKey, DateTime.now().millisecondsSinceEpoch);
-      _log.d('Saved ${sections.length} explore sections to cache');
+      _log.d('Saved ${normalizedSections.length} explore sections to cache');
     } catch (e) {
       _log.w('Failed to save explore cache: $e');
     }
@@ -290,10 +344,13 @@ class ExploreNotifier extends Notifier<ExploreState> {
 
       final greeting = result['greeting'] as String?;
       final sectionsData = result['sections'] as List<dynamic>? ?? [];
-
-      final sections = sectionsData
-          .map((s) => ExploreSection.fromJson(s as Map<String, dynamic>))
-          .toList();
+      final normalizedSections = await compute(
+        _normalizeExploreSectionsPayload,
+        sectionsData,
+      );
+      final sections = _buildExploreSectionsFromNormalizedPayload(
+        normalizedSections,
+      );
 
       _log.i('Fetched ${sections.length} sections');
 
@@ -314,7 +371,7 @@ class ExploreNotifier extends Notifier<ExploreState> {
         lastFetched: DateTime.now(),
       );
 
-      _saveToCache(sections);
+      _saveToCache(normalizedSections);
     } catch (e, stack) {
       _log.e('Error fetching home feed: $e', e, stack);
       state = state.copyWith(isLoading: false, error: e.toString());

@@ -359,6 +359,24 @@ class _QueueGroupedAlbumFilterRequest {
   );
 }
 
+class _QueueHistoryStatsMemoEntry {
+  final List<DownloadHistoryItem> historyItems;
+  final List<LocalLibraryItem> localItems;
+  final _HistoryStats stats;
+
+  const _QueueHistoryStatsMemoEntry({
+    required this.historyItems,
+    required this.localItems,
+    required this.stats,
+  });
+}
+
+_QueueHistoryStatsMemoEntry? _queueHistoryStatsMemo;
+
+String _queueHistoryAlbumKey(String albumName, String artistName) {
+  return '${albumName.toLowerCase()}|${artistName.toLowerCase()}';
+}
+
 String _queueFileExtLower(String filePath) {
   final slashIndex = filePath.lastIndexOf('/');
   final dotIndex = filePath.lastIndexOf('.');
@@ -558,21 +576,31 @@ _HistoryStats _buildQueueHistoryStats(
   List<DownloadHistoryItem> items, [
   List<LocalLibraryItem> localItems = const [],
 ]) {
+  final memo = _queueHistoryStatsMemo;
+  if (memo != null &&
+      identical(memo.historyItems, items) &&
+      identical(memo.localItems, localItems)) {
+    return memo.stats;
+  }
+
   final albumCounts = <String, int>{};
   final albumMap = <String, List<DownloadHistoryItem>>{};
   for (final item in items) {
-    final key =
-        '${item.albumName.toLowerCase()}|${(item.albumArtist ?? item.artistName).toLowerCase()}';
+    final key = _queueHistoryAlbumKey(
+      item.albumName,
+      item.albumArtist ?? item.artistName,
+    );
     albumCounts[key] = (albumCounts[key] ?? 0) + 1;
     albumMap.putIfAbsent(key, () => []).add(item);
   }
 
   var singleTracks = 0;
-  for (final item in items) {
-    final key =
-        '${item.albumName.toLowerCase()}|${(item.albumArtist ?? item.artistName).toLowerCase()}';
-    if ((albumCounts[key] ?? 0) <= 1) {
-      singleTracks++;
+  var albumCount = 0;
+  for (final count in albumCounts.values) {
+    if (count > 1) {
+      albumCount++;
+    } else {
+      singleTracks += count;
     }
   }
 
@@ -600,11 +628,6 @@ _HistoryStats _buildQueueHistoryStats(
   });
   groupedAlbums.sort((a, b) => b.latestDownload.compareTo(a.latestDownload));
 
-  var albumCount = 0;
-  for (final count in albumCounts.values) {
-    if (count > 1) albumCount++;
-  }
-
   final downloadedPathKeys = <String>{};
   for (final item in items) {
     downloadedPathKeys.addAll(buildPathMatchKeys(item.filePath));
@@ -620,8 +643,10 @@ _HistoryStats _buildQueueHistoryStats(
   final localAlbumCounts = <String, int>{};
   final localAlbumMap = <String, List<LocalLibraryItem>>{};
   for (final item in dedupedLocalItems) {
-    final key =
-        '${item.albumName.toLowerCase()}|${(item.albumArtist ?? item.artistName).toLowerCase()}';
+    final key = _queueHistoryAlbumKey(
+      item.albumName,
+      item.albumArtist ?? item.artistName,
+    );
     localAlbumCounts[key] = (localAlbumCounts[key] ?? 0) + 1;
     localAlbumMap.putIfAbsent(key, () => []).add(item);
   }
@@ -664,7 +689,7 @@ _HistoryStats _buildQueueHistoryStats(
   });
   groupedLocalAlbums.sort((a, b) => b.latestScanned.compareTo(a.latestScanned));
 
-  return _HistoryStats(
+  final stats = _HistoryStats(
     albumCounts: albumCounts,
     localAlbumCounts: localAlbumCounts,
     groupedAlbums: groupedAlbums,
@@ -674,6 +699,12 @@ _HistoryStats _buildQueueHistoryStats(
     localAlbumCount: localAlbumCount,
     localSingleTracks: localSingleTracks,
   );
+  _queueHistoryStatsMemo = _QueueHistoryStatsMemoEntry(
+    historyItems: items,
+    localItems: localItems,
+    stats: stats,
+  );
+  return stats;
 }
 
 List<_GroupedAlbum> _queueFilterGroupedAlbums(
@@ -1121,6 +1152,10 @@ class _QueueTabState extends ConsumerState<QueueTab> {
   List<UnifiedLibraryItem> _cachedUnifiedLocal = const [];
   List<DownloadHistoryItem>? _cachedDownloadedPathKeysSource;
   Set<String> _cachedDownloadedPathKeys = const <String>{};
+  final Map<String, List<String>> _localPathMatchKeysCache = {};
+  List<LocalLibraryItem>? _cachedLocalSinglesSource;
+  Map<String, int>? _cachedLocalSinglesAlbumCountsSource;
+  List<LocalLibraryItem> _cachedLocalSingles = const [];
   final Map<String, _FilterContentData> _filterContentDataCache = {};
   List<DownloadHistoryItem>? _filterCacheAllHistoryItems;
   _HistoryStats? _filterCacheHistoryStats;
@@ -1264,9 +1299,13 @@ class _QueueTabState extends ConsumerState<QueueTab> {
     }
     if (localChanged) {
       _localSearchIndexCache.clear();
+      _localPathMatchKeysCache.clear();
       _localFilterItemsCache = null;
       _localFilterQueryCache = '';
       _filteredLocalItemsCache = const [];
+      _cachedLocalSinglesSource = null;
+      _cachedLocalSinglesAlbumCountsSource = null;
+      _cachedLocalSingles = const [];
       _cachedUnifiedLocalSource = null;
       _cachedUnifiedLocal = const [];
     }
@@ -1354,6 +1393,32 @@ class _QueueTabState extends ConsumerState<QueueTab> {
     _cachedDownloadedPathKeysSource = historyItems;
     _cachedDownloadedPathKeys = Set<String>.unmodifiable(keys);
     return _cachedDownloadedPathKeys;
+  }
+
+  List<String> _localPathMatchKeys(LocalLibraryItem item) {
+    final cached = _localPathMatchKeysCache[item.id];
+    if (cached != null) return cached;
+    final keys = buildPathMatchKeys(item.filePath).toList(growable: false);
+    _localPathMatchKeysCache[item.id] = keys;
+    return keys;
+  }
+
+  List<LocalLibraryItem> _localSingleItems(
+    List<LocalLibraryItem> items,
+    Map<String, int> localAlbumCounts,
+  ) {
+    if (identical(items, _cachedLocalSinglesSource) &&
+        identical(localAlbumCounts, _cachedLocalSinglesAlbumCountsSource)) {
+      return _cachedLocalSingles;
+    }
+
+    final singles = items
+        .where((item) => (localAlbumCounts[item.albumKey] ?? 0) == 1)
+        .toList(growable: false);
+    _cachedLocalSinglesSource = items;
+    _cachedLocalSinglesAlbumCountsSource = localAlbumCounts;
+    _cachedLocalSingles = singles;
+    return singles;
   }
 
   List<LocalLibraryItem> _filterLocalItems(
@@ -3617,12 +3682,10 @@ class _QueueTabState extends ConsumerState<QueueTab> {
     if (filterMode == 'all') {
       localItemsForMerge = _filterLocalItems(localLibraryItems, query);
     } else {
-      final localSingles = localLibraryItems
-          .where((item) {
-            final count = localAlbumCounts[item.albumKey] ?? 0;
-            return count == 1;
-          })
-          .toList(growable: false);
+      final localSingles = _localSingleItems(
+        localLibraryItems,
+        localAlbumCounts,
+      );
       localItemsForMerge = _filterLocalItems(localSingles, query);
     }
 
@@ -3631,7 +3694,10 @@ class _QueueTabState extends ConsumerState<QueueTab> {
 
     final dedupedUnifiedLocal = <UnifiedLibraryItem>[];
     for (final item in unifiedLocal) {
-      final localPathKeys = buildPathMatchKeys(item.filePath);
+      final localSource = item.localItem;
+      final localPathKeys = localSource != null
+          ? _localPathMatchKeys(localSource)
+          : buildPathMatchKeys(item.filePath);
       final overlapsDownloaded = localPathKeys.any(downloadedPathKeys.contains);
       if (!overlapsDownloaded) {
         dedupedUnifiedLocal.add(item);

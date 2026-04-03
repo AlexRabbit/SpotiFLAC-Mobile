@@ -11,6 +11,7 @@ import 'package:spotiflac_android/services/platform_bridge.dart';
 import 'package:spotiflac_android/services/history_database.dart';
 import 'package:spotiflac_android/l10n/l10n.dart';
 import 'package:spotiflac_android/utils/file_access.dart';
+import 'package:spotiflac_android/utils/image_cache_utils.dart';
 import 'package:spotiflac_android/utils/lyrics_metadata_helper.dart';
 import 'package:spotiflac_android/providers/download_queue_provider.dart';
 import 'package:spotiflac_android/widgets/batch_progress_dialog.dart';
@@ -462,6 +463,7 @@ class _DownloadedAlbumScreenState extends ConsumerState<DownloadedAlbumScreen> {
               (constraints.maxHeight - kToolbarHeight) /
               (expandedHeight - kToolbarHeight);
           final showContent = collapseRatio > 0.3;
+          final cacheWidth = coverCacheWidthForViewport(context);
 
           return FlexibleSpaceBar(
             collapseMode: CollapseMode.pin,
@@ -472,6 +474,9 @@ class _DownloadedAlbumScreenState extends ConsumerState<DownloadedAlbumScreen> {
                   Image.file(
                     File(embeddedCoverPath),
                     fit: BoxFit.cover,
+                    cacheWidth: cacheWidth,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.low,
                     errorBuilder: (_, _, _) =>
                         Container(color: colorScheme.surface),
                   )
@@ -480,6 +485,7 @@ class _DownloadedAlbumScreenState extends ConsumerState<DownloadedAlbumScreen> {
                     imageUrl:
                         _highResCoverUrl(widget.coverUrl) ?? widget.coverUrl!,
                     fit: BoxFit.cover,
+                    memCacheWidth: cacheWidth,
                     cacheManager: CoverCacheManager.instance,
                     placeholder: (_, _) =>
                         Container(color: colorScheme.surface),

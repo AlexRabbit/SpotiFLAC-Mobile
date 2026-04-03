@@ -258,6 +258,20 @@ class _HomeTabState extends ConsumerState<HomeTab>
   List<Track>? _searchBucketsSourceTracks;
   _SearchResultBuckets? _searchBucketsCache;
   _SearchSortOption _searchSortOption = _SearchSortOption.defaultOrder;
+  List<SearchArtist>? _sortedArtistsSource;
+  _SearchSortOption? _sortedArtistsMode;
+  List<SearchArtist>? _sortedArtistsCache;
+  List<SearchAlbum>? _sortedAlbumsSource;
+  _SearchSortOption? _sortedAlbumsMode;
+  List<SearchAlbum>? _sortedAlbumsCache;
+  List<SearchPlaylist>? _sortedPlaylistsSource;
+  _SearchSortOption? _sortedPlaylistsMode;
+  List<SearchPlaylist>? _sortedPlaylistsCache;
+  List<Track>? _sortedTracksSource;
+  List<int>? _sortedTrackIndexesSource;
+  _SearchSortOption? _sortedTracksMode;
+  List<Track>? _sortedTracksCache;
+  List<int>? _sortedTrackIndexesCache;
 
   double _responsiveScale({
     required BuildContext context,
@@ -476,6 +490,23 @@ class _HomeTabState extends ConsumerState<HomeTab>
     return buckets;
   }
 
+  void _invalidateSearchSortCaches() {
+    _sortedArtistsSource = null;
+    _sortedArtistsMode = null;
+    _sortedArtistsCache = null;
+    _sortedAlbumsSource = null;
+    _sortedAlbumsMode = null;
+    _sortedAlbumsCache = null;
+    _sortedPlaylistsSource = null;
+    _sortedPlaylistsMode = null;
+    _sortedPlaylistsCache = null;
+    _sortedTracksSource = null;
+    _sortedTrackIndexesSource = null;
+    _sortedTracksMode = null;
+    _sortedTracksCache = null;
+    _sortedTrackIndexesCache = null;
+  }
+
   void _onSearchFocusChanged() {
     if (mounted) {
       setState(() {});
@@ -577,6 +608,7 @@ class _HomeTabState extends ConsumerState<HomeTab>
     if (_lastSearchQuery == searchKey) return;
     _lastSearchQuery = searchKey;
     _searchSortOption = _SearchSortOption.defaultOrder;
+    _invalidateSearchSortCaches();
 
     final isBuiltInProvider =
         searchProvider != null &&
@@ -1405,10 +1437,6 @@ class _HomeTabState extends ConsumerState<HomeTab>
             itemCount: itemCount,
             itemBuilder: (context, index) {
               final item = items[index];
-              final embeddedCoverPath = DownloadedEmbeddedCoverResolver.resolve(
-                item.filePath,
-                onChanged: _onEmbeddedCoverChanged,
-              );
               return KeyedSubtree(
                 key: ValueKey(item.id),
                 child: Semantics(
@@ -1421,48 +1449,15 @@ class _HomeTabState extends ConsumerState<HomeTab>
                       margin: const EdgeInsets.only(right: 12),
                       child: Column(
                         children: [
-                          ClipRRect(
+                          _DownloadedOrRemoteCover(
+                            downloadedFilePath: item.filePath,
+                            imageUrl: item.coverUrl,
+                            width: coverSize,
+                            height: coverSize,
                             borderRadius: BorderRadius.circular(12),
-                            child: embeddedCoverPath != null
-                                ? Image.file(
-                                    File(embeddedCoverPath),
-                                    width: coverSize,
-                                    height: coverSize,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: (coverSize * 2).round(),
-                                    cacheHeight: (coverSize * 2).round(),
-                                    errorBuilder: (_, _, _) => Container(
-                                      width: coverSize,
-                                      height: coverSize,
-                                      color:
-                                          colorScheme.surfaceContainerHighest,
-                                      child: Icon(
-                                        Icons.music_note,
-                                        color: colorScheme.onSurfaceVariant,
-                                        size: 32,
-                                      ),
-                                    ),
-                                  )
-                                : item.coverUrl != null
-                                ? CachedNetworkImage(
-                                    imageUrl: item.coverUrl!,
-                                    width: coverSize,
-                                    height: coverSize,
-                                    fit: BoxFit.cover,
-                                    memCacheWidth: (coverSize * 2).round(),
-                                    memCacheHeight: (coverSize * 2).round(),
-                                    cacheManager: CoverCacheManager.instance,
-                                  )
-                                : Container(
-                                    width: coverSize,
-                                    height: coverSize,
-                                    color: colorScheme.surfaceContainerHighest,
-                                    child: Icon(
-                                      Icons.music_note,
-                                      color: colorScheme.onSurfaceVariant,
-                                      size: 32,
-                                    ),
-                                  ),
+                            fallbackIcon: Icons.music_note,
+                            fallbackIconSize: 32,
+                            colorScheme: colorScheme,
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -1995,12 +1990,6 @@ class _HomeTabState extends ConsumerState<HomeTab>
     IconData typeIcon;
     String typeLabel;
     final isDownloaded = item.providerId == 'download';
-    final embeddedCoverPath = isDownloaded
-        ? DownloadedEmbeddedCoverResolver.resolve(
-            downloadFilePathByRecentKey['${item.type.name}:${item.id}'],
-            onChanged: _onEmbeddedCoverChanged,
-          )
-        : null;
 
     switch (item.type) {
       case RecentAccessType.artist:
@@ -2026,55 +2015,18 @@ class _HomeTabState extends ConsumerState<HomeTab>
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Row(
             children: [
-              ClipRRect(
+              _DownloadedOrRemoteCover(
+                downloadedFilePath: isDownloaded
+                    ? downloadFilePathByRecentKey['${item.type.name}:${item.id}']
+                    : null,
+                imageUrl: item.imageUrl,
+                width: 56,
+                height: 56,
                 borderRadius: BorderRadius.circular(
                   item.type == RecentAccessType.artist ? 28 : 4,
                 ),
-                child: embeddedCoverPath != null
-                    ? Image.file(
-                        File(embeddedCoverPath),
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        cacheWidth: 112,
-                        cacheHeight: 112,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          width: 56,
-                          height: 56,
-                          color: colorScheme.surfaceContainerHighest,
-                          child: Icon(
-                            typeIcon,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      )
-                    : item.imageUrl != null && item.imageUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: item.imageUrl!,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        memCacheWidth: 112,
-                        cacheManager: CoverCacheManager.instance,
-                        errorWidget: (context, url, error) => Container(
-                          width: 56,
-                          height: 56,
-                          color: colorScheme.surfaceContainerHighest,
-                          child: Icon(
-                            typeIcon,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      )
-                    : Container(
-                        width: 56,
-                        height: 56,
-                        color: colorScheme.surfaceContainerHighest,
-                        child: Icon(
-                          typeIcon,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
+                fallbackIcon: typeIcon,
+                colorScheme: colorScheme,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2570,6 +2522,114 @@ class _HomeTabState extends ConsumerState<HomeTab>
     return sorted;
   }
 
+  List<SearchArtist>? _sortSearchArtists(List<SearchArtist>? artists) {
+    if (artists == null ||
+        artists.isEmpty ||
+        _searchSortOption == _SearchSortOption.defaultOrder) {
+      return artists;
+    }
+    if (identical(artists, _sortedArtistsSource) &&
+        _sortedArtistsMode == _searchSortOption &&
+        _sortedArtistsCache != null) {
+      return _sortedArtistsCache;
+    }
+    final sorted = _applySortToList<SearchArtist>(
+      artists,
+      (a) => a.name,
+      (a) => a.name,
+      (a) => 0,
+      (a) => null,
+    );
+    _sortedArtistsSource = artists;
+    _sortedArtistsMode = _searchSortOption;
+    _sortedArtistsCache = sorted;
+    return sorted;
+  }
+
+  List<SearchAlbum>? _sortSearchAlbums(List<SearchAlbum>? albums) {
+    if (albums == null ||
+        albums.isEmpty ||
+        _searchSortOption == _SearchSortOption.defaultOrder) {
+      return albums;
+    }
+    if (identical(albums, _sortedAlbumsSource) &&
+        _sortedAlbumsMode == _searchSortOption &&
+        _sortedAlbumsCache != null) {
+      return _sortedAlbumsCache;
+    }
+    final sorted = _applySortToList<SearchAlbum>(
+      albums,
+      (a) => a.name,
+      (a) => a.artists,
+      (a) => 0,
+      (a) => a.releaseDate,
+    );
+    _sortedAlbumsSource = albums;
+    _sortedAlbumsMode = _searchSortOption;
+    _sortedAlbumsCache = sorted;
+    return sorted;
+  }
+
+  List<SearchPlaylist>? _sortSearchPlaylists(List<SearchPlaylist>? playlists) {
+    if (playlists == null ||
+        playlists.isEmpty ||
+        _searchSortOption == _SearchSortOption.defaultOrder) {
+      return playlists;
+    }
+    if (identical(playlists, _sortedPlaylistsSource) &&
+        _sortedPlaylistsMode == _searchSortOption &&
+        _sortedPlaylistsCache != null) {
+      return _sortedPlaylistsCache;
+    }
+    final sorted = _applySortToList<SearchPlaylist>(
+      playlists,
+      (p) => p.name,
+      (p) => p.owner,
+      (p) => 0,
+      (p) => null,
+    );
+    _sortedPlaylistsSource = playlists;
+    _sortedPlaylistsMode = _searchSortOption;
+    _sortedPlaylistsCache = sorted;
+    return sorted;
+  }
+
+  ({List<Track> tracks, List<int> indexes}) _sortTrackResults(
+    List<Track> tracks,
+    List<int> indexes,
+  ) {
+    if (tracks.isEmpty || _searchSortOption == _SearchSortOption.defaultOrder) {
+      return (tracks: tracks, indexes: indexes);
+    }
+    if (identical(tracks, _sortedTracksSource) &&
+        identical(indexes, _sortedTrackIndexesSource) &&
+        _sortedTracksMode == _searchSortOption &&
+        _sortedTracksCache != null &&
+        _sortedTrackIndexesCache != null) {
+      return (tracks: _sortedTracksCache!, indexes: _sortedTrackIndexesCache!);
+    }
+    final paired = List.generate(
+      tracks.length,
+      (i) => (tracks[i], indexes[i]),
+      growable: false,
+    );
+    final sortedPairs = _applySortToList<(Track, int)>(
+      paired,
+      (p) => p.$1.name,
+      (p) => p.$1.artistName,
+      (p) => p.$1.duration,
+      (p) => p.$1.releaseDate,
+    );
+    final sortedTracks = sortedPairs.map((p) => p.$1).toList(growable: false);
+    final sortedIndexes = sortedPairs.map((p) => p.$2).toList(growable: false);
+    _sortedTracksSource = tracks;
+    _sortedTrackIndexesSource = indexes;
+    _sortedTracksMode = _searchSortOption;
+    _sortedTracksCache = sortedTracks;
+    _sortedTrackIndexesCache = sortedIndexes;
+    return (tracks: sortedTracks, indexes: sortedIndexes);
+  }
+
   List<Widget> _buildSearchResults({
     required List<Track> tracks,
     required List<SearchArtist>? searchArtists,
@@ -2603,58 +2663,12 @@ class _HomeTabState extends ConsumerState<HomeTab>
     final playlistItems = buckets.playlistItems;
     final artistItems = buckets.artistItems;
 
-    final sortedArtists = searchArtists != null && searchArtists.isNotEmpty
-        ? _applySortToList<SearchArtist>(
-            searchArtists,
-            (a) => a.name,
-            (a) => a.name,
-            (a) => 0,
-            (a) => null,
-          )
-        : searchArtists;
-
-    final sortedAlbums = searchAlbums != null && searchAlbums.isNotEmpty
-        ? _applySortToList<SearchAlbum>(
-            searchAlbums,
-            (a) => a.name,
-            (a) => a.artists,
-            (a) => 0,
-            (a) => a.releaseDate,
-          )
-        : searchAlbums;
-
-    final sortedPlaylists =
-        searchPlaylists != null && searchPlaylists.isNotEmpty
-        ? _applySortToList<SearchPlaylist>(
-            searchPlaylists,
-            (p) => p.name,
-            (p) => p.owner,
-            (p) => 0,
-            (p) => null,
-          )
-        : searchPlaylists;
-
-    List<Track> sortedTracks;
-    List<int> sortedTrackIndexes;
-    if (realTracks.isNotEmpty &&
-        _searchSortOption != _SearchSortOption.defaultOrder) {
-      final paired = List.generate(
-        realTracks.length,
-        (i) => (realTracks[i], realTrackIndexes[i]),
-      );
-      final sortedPairs = _applySortToList<(Track, int)>(
-        paired,
-        (p) => p.$1.name,
-        (p) => p.$1.artistName,
-        (p) => p.$1.duration,
-        (p) => p.$1.releaseDate,
-      );
-      sortedTracks = sortedPairs.map((p) => p.$1).toList();
-      sortedTrackIndexes = sortedPairs.map((p) => p.$2).toList();
-    } else {
-      sortedTracks = realTracks;
-      sortedTrackIndexes = realTrackIndexes;
-    }
+    final sortedArtists = _sortSearchArtists(searchArtists);
+    final sortedAlbums = _sortSearchAlbums(searchAlbums);
+    final sortedPlaylists = _sortSearchPlaylists(searchPlaylists);
+    final sortedTrackResults = _sortTrackResults(realTracks, realTrackIndexes);
+    final sortedTracks = sortedTrackResults.tracks;
+    final sortedTrackIndexes = sortedTrackResults.indexes;
 
     final slivers = <Widget>[
       if (error != null)
@@ -3689,9 +3703,7 @@ class _TrackItemWithStatus extends ConsumerWidget {
           Divider(
             height: 1,
             thickness: 1,
-            indent:
-                thumbWidth +
-                24,
+            indent: thumbWidth + 24,
             endIndent: 12,
             color: colorScheme.outlineVariant.withValues(alpha: 0.3),
           ),
@@ -4158,6 +4170,126 @@ class _SearchPlaylistItemWidget extends StatelessWidget {
           ),
       ],
     );
+  }
+}
+
+class _DownloadedOrRemoteCover extends StatefulWidget {
+  final String? downloadedFilePath;
+  final String? imageUrl;
+  final double width;
+  final double height;
+  final BorderRadius borderRadius;
+  final IconData fallbackIcon;
+  final double fallbackIconSize;
+  final ColorScheme colorScheme;
+
+  const _DownloadedOrRemoteCover({
+    required this.downloadedFilePath,
+    required this.imageUrl,
+    required this.width,
+    required this.height,
+    required this.borderRadius,
+    required this.fallbackIcon,
+    required this.colorScheme,
+    this.fallbackIconSize = 24,
+  });
+
+  @override
+  State<_DownloadedOrRemoteCover> createState() =>
+      _DownloadedOrRemoteCoverState();
+}
+
+class _DownloadedOrRemoteCoverState extends State<_DownloadedOrRemoteCover> {
+  String? _embeddedCoverPath;
+  bool _refreshScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _embeddedCoverPath = _resolveEmbeddedCoverPath();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DownloadedOrRemoteCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.downloadedFilePath != widget.downloadedFilePath ||
+        oldWidget.imageUrl != widget.imageUrl) {
+      final nextPath = _resolveEmbeddedCoverPath();
+      if (nextPath != _embeddedCoverPath) {
+        setState(() => _embeddedCoverPath = nextPath);
+      }
+    }
+  }
+
+  String? _resolveEmbeddedCoverPath() {
+    final filePath = widget.downloadedFilePath;
+    if (filePath == null || filePath.isEmpty) return null;
+    return DownloadedEmbeddedCoverResolver.resolve(
+      filePath,
+      onChanged: _onEmbeddedCoverChanged,
+    );
+  }
+
+  void _onEmbeddedCoverChanged() {
+    if (!mounted || _refreshScheduled) return;
+    _refreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshScheduled = false;
+      if (!mounted) return;
+      final nextPath = _resolveEmbeddedCoverPath();
+      if (nextPath != _embeddedCoverPath) {
+        setState(() => _embeddedCoverPath = nextPath);
+      }
+    });
+  }
+
+  Widget _fallback() {
+    return Container(
+      width: widget.width,
+      height: widget.height,
+      color: widget.colorScheme.surfaceContainerHighest,
+      child: Icon(
+        widget.fallbackIcon,
+        color: widget.colorScheme.onSurfaceVariant,
+        size: widget.fallbackIconSize,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cacheWidth = (widget.width * 2).round();
+    final cacheHeight = (widget.height * 2).round();
+
+    Widget child;
+    if (_embeddedCoverPath != null) {
+      child = Image.file(
+        File(_embeddedCoverPath!),
+        width: widget.width,
+        height: widget.height,
+        fit: BoxFit.cover,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (_, _, _) => _fallback(),
+      );
+    } else if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty) {
+      child = CachedNetworkImage(
+        imageUrl: widget.imageUrl!,
+        width: widget.width,
+        height: widget.height,
+        fit: BoxFit.cover,
+        memCacheWidth: cacheWidth,
+        memCacheHeight: cacheHeight,
+        cacheManager: CoverCacheManager.instance,
+        errorWidget: (_, _, _) => _fallback(),
+      );
+    } else {
+      child = _fallback();
+    }
+
+    return ClipRRect(borderRadius: widget.borderRadius, child: child);
   }
 }
 
