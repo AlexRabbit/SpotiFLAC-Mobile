@@ -33,6 +33,28 @@ class LibraryCollectionsSnapshot {
   });
 }
 
+class PlaylistPickerSummaryRow {
+  final String id;
+  final String name;
+  final String? coverImagePath;
+  final String? previewCover;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final int trackCount;
+  final bool containsAllRequestedTracks;
+
+  const PlaylistPickerSummaryRow({
+    required this.id,
+    required this.name,
+    this.coverImagePath,
+    this.previewCover,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.trackCount,
+    required this.containsAllRequestedTracks,
+  });
+}
+
 class LibraryCollectionsDatabase {
   static final LibraryCollectionsDatabase instance =
       LibraryCollectionsDatabase._init();
@@ -249,6 +271,119 @@ class LibraryCollectionsDatabase {
       playlistRows: playlistRows,
       playlistTrackRows: playlistTrackRows,
     );
+  }
+
+  Future<List<PlaylistPickerSummaryRow>> loadPlaylistPickerSummaries(
+    List<String> requestedTrackKeys,
+  ) async {
+    final db = await database;
+    final uniqueTrackKeys = requestedTrackKeys
+        .where((key) => key.trim().isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+
+    final playlistRows = await db.rawQuery('''
+      SELECT
+        p.id,
+        p.name,
+        p.cover_image_path,
+        p.created_at,
+        p.updated_at,
+        COUNT(pt.track_key) AS track_count
+      FROM $_tablePlaylists p
+      LEFT JOIN $_tablePlaylistTracks pt ON pt.playlist_id = p.id
+      GROUP BY p.id
+      ORDER BY p.created_at DESC, p.rowid DESC
+    ''');
+
+    final matchedCountsByPlaylistId = <String, int>{};
+    if (uniqueTrackKeys.isNotEmpty) {
+      final placeholders = List.filled(uniqueTrackKeys.length, '?').join(', ');
+      final matchedRows = await db.rawQuery('''
+          SELECT playlist_id, COUNT(*) AS matched_count
+          FROM $_tablePlaylistTracks
+          WHERE track_key IN ($placeholders)
+          GROUP BY playlist_id
+        ''', uniqueTrackKeys);
+      for (final row in matchedRows) {
+        final playlistId = row['playlist_id']?.toString();
+        if (playlistId == null || playlistId.isEmpty) continue;
+        matchedCountsByPlaylistId[playlistId] =
+            (row['matched_count'] as num?)?.toInt() ?? 0;
+      }
+    }
+
+    final playlistIdsNeedingPreview = playlistRows
+        .where((row) {
+          final coverPath = row['cover_image_path']?.toString();
+          return coverPath == null || coverPath.isEmpty;
+        })
+        .map((row) => row['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+
+    final previewCoverByPlaylistId = <String, String?>{};
+    if (playlistIdsNeedingPreview.isNotEmpty) {
+      final placeholders = List.filled(
+        playlistIdsNeedingPreview.length,
+        '?',
+      ).join(', ');
+      final previewRows = await db.rawQuery('''
+          SELECT outer_tracks.playlist_id, outer_tracks.track_json
+          FROM $_tablePlaylistTracks outer_tracks
+          WHERE outer_tracks.playlist_id IN ($placeholders)
+            AND outer_tracks.rowid = (
+              SELECT inner_tracks.rowid
+              FROM $_tablePlaylistTracks inner_tracks
+              WHERE inner_tracks.playlist_id = outer_tracks.playlist_id
+              ORDER BY inner_tracks.added_at DESC, inner_tracks.rowid DESC
+              LIMIT 1
+            )
+        ''', playlistIdsNeedingPreview);
+
+      for (final row in previewRows) {
+        final playlistId = row['playlist_id']?.toString();
+        final trackJson = row['track_json'] as String?;
+        if (playlistId == null ||
+            playlistId.isEmpty ||
+            trackJson == null ||
+            trackJson.isEmpty) {
+          continue;
+        }
+        try {
+          final decoded = jsonDecode(trackJson);
+          if (decoded is! Map) continue;
+          final coverUrl = decoded['coverUrl']?.toString();
+          if (coverUrl != null && coverUrl.isNotEmpty) {
+            previewCoverByPlaylistId[playlistId] = coverUrl;
+          }
+        } catch (_) {}
+      }
+    }
+
+    return playlistRows
+        .map((row) {
+          final id = row['id']?.toString() ?? '';
+          final createdAt =
+              DateTime.tryParse(row['created_at']?.toString() ?? '') ??
+              DateTime.now();
+          final updatedAt =
+              DateTime.tryParse(row['updated_at']?.toString() ?? '') ??
+              createdAt;
+          return PlaylistPickerSummaryRow(
+            id: id,
+            name: row['name']?.toString() ?? '',
+            coverImagePath: row['cover_image_path'] as String?,
+            previewCover: previewCoverByPlaylistId[id],
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            trackCount: (row['track_count'] as num?)?.toInt() ?? 0,
+            containsAllRequestedTracks:
+                uniqueTrackKeys.isNotEmpty &&
+                matchedCountsByPlaylistId[id] == uniqueTrackKeys.length,
+          );
+        })
+        .toList(growable: false);
   }
 
   Future<void> upsertWishlistEntry({

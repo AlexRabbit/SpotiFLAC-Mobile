@@ -8,6 +8,7 @@ import 'package:spotiflac_android/models/track.dart';
 import 'package:spotiflac_android/providers/download_queue_provider.dart';
 import 'package:spotiflac_android/providers/library_collections_provider.dart';
 import 'package:spotiflac_android/utils/file_access.dart';
+import 'package:spotiflac_android/utils/image_cache_utils.dart';
 import 'package:spotiflac_android/utils/string_utils.dart';
 import 'package:spotiflac_android/providers/settings_provider.dart';
 import 'package:spotiflac_android/providers/local_library_provider.dart';
@@ -242,6 +243,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
               (constraints.maxHeight - kToolbarHeight) /
               (expandedHeight - kToolbarHeight);
           final showContent = collapseRatio > 0.3;
+          final cacheWidth = coverCacheWidthForViewport(context);
 
           return FlexibleSpaceBar(
             collapseMode: CollapseMode.pin,
@@ -252,6 +254,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                   CachedNetworkImage(
                     imageUrl: _highResCoverUrl(_coverUrl) ?? _coverUrl!,
                     fit: BoxFit.cover,
+                    memCacheWidth: cacheWidth,
                     cacheManager: CoverCacheManager.instance,
                     placeholder: (_, _) =>
                         Container(color: colorScheme.surface),

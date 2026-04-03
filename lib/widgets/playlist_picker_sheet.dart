@@ -19,9 +19,9 @@ Future<void> showAddTrackToPlaylistSheet(
 Future<void> showAddTracksToPlaylistSheet(
   BuildContext context,
   WidgetRef ref,
-  List<Track> tracks,
-  {String? playlistNamePrefill}
-) async {
+  List<Track> tracks, {
+  String? playlistNamePrefill,
+}) async {
   if (tracks.isEmpty) return;
 
   if (!context.mounted) return;
@@ -32,7 +32,10 @@ Future<void> showAddTracksToPlaylistSheet(
     showDragHandle: true,
     isScrollControlled: true,
     builder: (sheetContext) {
-      return _PlaylistPickerSheetContent(tracks: tracks, playlistNamePrefill: playlistNamePrefill);
+      return _PlaylistPickerSheetContent(
+        tracks: tracks,
+        playlistNamePrefill: playlistNamePrefill,
+      );
     },
   );
 }
@@ -41,7 +44,10 @@ class _PlaylistPickerSheetContent extends ConsumerStatefulWidget {
   final List<Track> tracks;
   final String? playlistNamePrefill;
 
-  const _PlaylistPickerSheetContent({required this.tracks, this.playlistNamePrefill});
+  const _PlaylistPickerSheetContent({
+    required this.tracks,
+    this.playlistNamePrefill,
+  });
 
   @override
   ConsumerState<_PlaylistPickerSheetContent> createState() =>
@@ -50,37 +56,33 @@ class _PlaylistPickerSheetContent extends ConsumerStatefulWidget {
 
 class _PlaylistPickerSheetContentState
     extends ConsumerState<_PlaylistPickerSheetContent> {
+  late final PlaylistPickerSummaryRequest _summaryRequest;
   final Set<String> _selectedPlaylistIds = {};
-  final Set<String> _initialDisabledIds = {};
-  bool _initialized = false;
+  final Set<String> _committedPlaylistIds = {};
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_initialized) {
-      final playlists = ref.read(libraryCollectionsProvider).playlists;
-      for (final playlist in playlists) {
-        final alreadyInPlaylist =
-            widget.tracks.every((t) => playlist.containsTrack(t));
-        if (alreadyInPlaylist) {
-          _initialDisabledIds.add(playlist.id);
-          _selectedPlaylistIds.add(playlist.id);
-        }
-      }
-      _initialized = true;
-    }
+  void initState() {
+    super.initState();
+    _summaryRequest = PlaylistPickerSummaryRequest.fromTracks(widget.tracks);
   }
 
-  void _handleDone() async {
+  void _handleDone(List<PlaylistPickerSummary> playlists) async {
     final notifier = ref.read(libraryCollectionsProvider.notifier);
-    final idsToAdd = _selectedPlaylistIds.difference(_initialDisabledIds);
+    final effectiveDisabledIds = <String>{
+      ..._committedPlaylistIds,
+      for (final playlist in playlists)
+        if (playlist.containsAllRequestedTracks) playlist.id,
+    };
+    final idsToAdd = _selectedPlaylistIds.difference(effectiveDisabledIds);
+    final playlistNamesById = {
+      for (final playlist in playlists) playlist.id: playlist.name,
+    };
     final addedNames = <String>[];
 
     for (final playlistId in idsToAdd) {
-      final playlist =
-          ref.read(libraryCollectionsProvider).playlistById(playlistId);
-      if (playlist != null) {
-        addedNames.add(playlist.name);
+      final playlistName = playlistNamesById[playlistId];
+      if (playlistName != null && playlistName.isNotEmpty) {
+        addedNames.add(playlistName);
       }
       await notifier.addTracksToPlaylist(playlistId, widget.tracks);
     }
@@ -89,20 +91,19 @@ class _PlaylistPickerSheetContentState
     Navigator.of(context).pop();
 
     if (addedNames.isNotEmpty) {
-      final name =
-          addedNames.length == 1 ? addedNames.first : addedNames.join(', ');
+      final name = addedNames.length == 1
+          ? addedNames.first
+          : addedNames.join(', ');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.collectionAddedToPlaylist(name)),
-        ),
+        SnackBar(content: Text(context.l10n.collectionAddedToPlaylist(name))),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final playlists = ref.watch(
-      libraryCollectionsProvider.select((state) => state.playlists),
+    final playlistSummariesValue = ref.watch(
+      libraryPlaylistPickerSummariesProvider(_summaryRequest),
     );
     final notifier = ref.read(libraryCollectionsProvider.notifier);
 
@@ -115,7 +116,13 @@ class _PlaylistPickerSheetContentState
           '${widget.tracks.length} ${widget.tracks.length == 1 ? 'track' : 'tracks'}';
     }
 
-    final idsToAdd = _selectedPlaylistIds.difference(_initialDisabledIds);
+    final resolvedPlaylists = playlistSummariesValue.asData?.value ?? const [];
+    final effectiveDisabledIds = <String>{
+      ..._committedPlaylistIds,
+      for (final playlist in resolvedPlaylists)
+        if (playlist.containsAllRequestedTracks) playlist.id,
+    };
+    final idsToAdd = _selectedPlaylistIds.difference(effectiveDisabledIds);
     final hasNewSelections = idsToAdd.isNotEmpty;
 
     return SafeArea(
@@ -132,74 +139,104 @@ class _PlaylistPickerSheetContentState
             leading: const Icon(Icons.add_circle_outline),
             title: Text(context.l10n.collectionCreatePlaylist),
             onTap: () async {
-              final name = await _promptPlaylistName(context, widget.playlistNamePrefill);
+              final name = await _promptPlaylistName(
+                context,
+                widget.playlistNamePrefill,
+              );
               if (name == null || name.trim().isEmpty || !context.mounted) {
                 return;
               }
               final playlistId = await notifier.createPlaylist(name.trim());
               await notifier.addTracksToPlaylist(playlistId, widget.tracks);
               setState(() {
-                _initialDisabledIds.add(playlistId);
-                _selectedPlaylistIds.add(playlistId);
+                _committedPlaylistIds.add(playlistId);
+                _selectedPlaylistIds.remove(playlistId);
               });
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(context.l10n.collectionAddedToPlaylist(name.trim())),
+                  content: Text(
+                    context.l10n.collectionAddedToPlaylist(name.trim()),
+                  ),
                 ),
               );
             },
           ),
-          if (playlists.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-              child: Text(
-                context.l10n.collectionNoPlaylistsYet,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-            )
-          else
-            Flexible(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 320),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: playlists.length,
-                  itemBuilder: (context, index) {
-                    final playlist = playlists[index];
-                    final isAlreadyIn = _initialDisabledIds.contains(playlist.id);
-                    final isSelected = _selectedPlaylistIds.contains(playlist.id);
-
-                    return ListTile(
-                      leading: _PlaylistPickerThumbnail(
-                        playlist: playlist,
-                        isSelected: isSelected,
-                      ),
-                      title: Text(playlist.name),
-                      subtitle: Text(
-                        context.l10n.collectionPlaylistTracks(
-                          playlist.tracks.length,
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: playlistSummariesValue.when(
+                data: (playlists) {
+                  if (playlists.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      child: Text(
+                        context.l10n.collectionNoPlaylistsYet,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      enabled: !isAlreadyIn,
-                      onTap: !isAlreadyIn
-                          ? () {
-                              setState(() {
-                                if (isSelected) {
-                                  _selectedPlaylistIds.remove(playlist.id);
-                                } else {
-                                  _selectedPlaylistIds.add(playlist.id);
-                                }
-                              });
-                            }
-                          : null,
                     );
-                  },
+                  }
+                  return ListView.builder(
+                    itemCount: playlists.length,
+                    itemBuilder: (context, index) {
+                      final playlist = playlists[index];
+                      final isAlreadyIn = effectiveDisabledIds.contains(
+                        playlist.id,
+                      );
+                      final isSelected =
+                          _selectedPlaylistIds.contains(playlist.id) ||
+                          isAlreadyIn;
+
+                      return ListTile(
+                        leading: _PlaylistPickerThumbnail(
+                          playlist: playlist,
+                          isSelected: isSelected,
+                        ),
+                        title: Text(playlist.name),
+                        subtitle: Text(
+                          context.l10n.collectionPlaylistTracks(
+                            playlist.trackCount,
+                          ),
+                        ),
+                        enabled: !isAlreadyIn,
+                        onTap: !isAlreadyIn
+                            ? () {
+                                setState(() {
+                                  if (_selectedPlaylistIds.contains(
+                                    playlist.id,
+                                  )) {
+                                    _selectedPlaylistIds.remove(playlist.id);
+                                  } else {
+                                    _selectedPlaylistIds.add(playlist.id);
+                                  }
+                                });
+                              }
+                            : null,
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                error: (_, _) => Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                  child: Text(
+                    context.l10n.collectionNoPlaylistsYet,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               ),
             ),
+          ),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -208,7 +245,7 @@ class _PlaylistPickerSheetContentState
               child: FilledButton(
                 onPressed: () {
                   if (hasNewSelections) {
-                    _handleDone();
+                    _handleDone(resolvedPlaylists);
                   } else {
                     Navigator.of(context).pop();
                   }
@@ -223,7 +260,10 @@ class _PlaylistPickerSheetContentState
   }
 }
 
-Future<String?> _promptPlaylistName(BuildContext context, String? playlistNamePrefill) async {
+Future<String?> _promptPlaylistName(
+  BuildContext context,
+  String? playlistNamePrefill,
+) async {
   final controller = TextEditingController(text: playlistNamePrefill);
   final formKey = GlobalKey<FormState>();
 
@@ -275,7 +315,7 @@ Future<String?> _promptPlaylistName(BuildContext context, String? playlistNamePr
 }
 
 class _PlaylistPickerThumbnail extends StatelessWidget {
-  final UserPlaylistCollection playlist;
+  final PlaylistPickerSummary playlist;
   final bool isSelected;
 
   const _PlaylistPickerThumbnail({
@@ -341,15 +381,7 @@ class _PlaylistPickerThumbnail extends StatelessWidget {
       );
     }
 
-    String? firstCoverUrl;
-    for (final entry in playlist.tracks) {
-      final coverUrl = entry.track.coverUrl;
-      if (coverUrl != null && coverUrl.isNotEmpty) {
-        firstCoverUrl = coverUrl;
-        break;
-      }
-    }
-
+    final firstCoverUrl = playlist.previewCover;
     if (firstCoverUrl != null) {
       final isLocalPath =
           !firstCoverUrl.startsWith('http://') &&

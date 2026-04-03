@@ -748,6 +748,10 @@ func (c *DeezerClient) GetArtist(ctx context.Context, artistID string) (*ArtistR
 				Artists:     artist.Name,
 			})
 		}
+
+		// The Deezer /artist/{id}/albums endpoint does not return nb_tracks.
+		// Fetch track counts in parallel from individual /album/{id} endpoints.
+		c.fetchAlbumTrackCounts(ctx, albums)
 	}
 
 	result := &ArtistResponsePayload{
@@ -765,6 +769,63 @@ func (c *DeezerClient) GetArtist(ctx context.Context, artistID string) (*ArtistR
 	c.cacheMu.Unlock()
 
 	return result, nil
+}
+
+// fetchAlbumTrackCounts fetches nb_tracks for each album in parallel using
+// individual /album/{id} calls, since the /artist/{id}/albums endpoint does
+// not include this field. Albums whose track count is already known (non-zero)
+// are skipped.
+func (c *DeezerClient) fetchAlbumTrackCounts(ctx context.Context, albums []ArtistAlbumMetadata) {
+	// Find albums that need track counts
+	type indexedID struct {
+		idx     int
+		albumID string
+	}
+	var toFetch []indexedID
+	for i, a := range albums {
+		if a.TotalTracks == 0 {
+			rawID := strings.TrimPrefix(a.ID, "deezer:")
+			if rawID != "" {
+				toFetch = append(toFetch, indexedID{idx: i, albumID: rawID})
+			}
+		}
+	}
+	if len(toFetch) == 0 {
+		return
+	}
+
+	const maxParallel = 10
+	sem := make(chan struct{}, maxParallel)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, item := range toFetch {
+		wg.Add(1)
+		go func(it indexedID) {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+
+			albumURL := fmt.Sprintf(deezerAlbumURL, it.albumID)
+			var resp struct {
+				NbTracks int `json:"nb_tracks"`
+			}
+			if err := c.getJSON(ctx, albumURL, &resp); err != nil {
+				return
+			}
+
+			mu.Lock()
+			albums[it.idx].TotalTracks = resp.NbTracks
+			mu.Unlock()
+		}(item)
+	}
+
+	wg.Wait()
 }
 
 func (c *DeezerClient) GetRelatedArtists(ctx context.Context, artistID string, limit int) ([]SearchArtistResult, error) {

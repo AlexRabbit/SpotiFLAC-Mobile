@@ -9,6 +9,7 @@ import 'package:spotiflac_android/providers/download_queue_provider.dart';
 import 'package:spotiflac_android/providers/extension_provider.dart';
 import 'package:spotiflac_android/providers/settings_provider.dart';
 import 'package:spotiflac_android/utils/file_access.dart';
+import 'package:spotiflac_android/utils/image_cache_utils.dart';
 import 'package:spotiflac_android/utils/lyrics_metadata_helper.dart';
 import 'package:spotiflac_android/services/library_database.dart';
 import 'package:spotiflac_android/services/ffmpeg_service.dart';
@@ -336,6 +337,7 @@ class _LocalAlbumScreenState extends ConsumerState<LocalAlbumScreen> {
               (constraints.maxHeight - kToolbarHeight) /
               (expandedHeight - kToolbarHeight);
           final showContent = collapseRatio > 0.3;
+          final cacheWidth = coverCacheWidthForViewport(context);
 
           return FlexibleSpaceBar(
             collapseMode: CollapseMode.pin,
@@ -346,6 +348,9 @@ class _LocalAlbumScreenState extends ConsumerState<LocalAlbumScreen> {
                   Image.file(
                     File(widget.coverPath!),
                     fit: BoxFit.cover,
+                    cacheWidth: cacheWidth,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.low,
                     errorBuilder: (_, _, _) =>
                         Container(color: colorScheme.surface),
                   )

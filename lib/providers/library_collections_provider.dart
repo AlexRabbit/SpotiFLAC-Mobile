@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -125,6 +126,54 @@ class UserPlaylistCollection {
           .toList(growable: false),
     );
   }
+}
+
+class PlaylistPickerSummary {
+  final String id;
+  final String name;
+  final String? coverImagePath;
+  final String? previewCover;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final int trackCount;
+  final bool containsAllRequestedTracks;
+
+  const PlaylistPickerSummary({
+    required this.id,
+    required this.name,
+    this.coverImagePath,
+    this.previewCover,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.trackCount,
+    required this.containsAllRequestedTracks,
+  });
+}
+
+class PlaylistPickerSummaryRequest {
+  final List<String> trackKeys;
+
+  PlaylistPickerSummaryRequest._(this.trackKeys);
+
+  factory PlaylistPickerSummaryRequest.fromTracks(Iterable<Track> tracks) {
+    final keys =
+        tracks
+            .map(trackCollectionKey)
+            .where((key) => key.trim().isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    return PlaylistPickerSummaryRequest._(keys);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaylistPickerSummaryRequest &&
+          listEquals(trackKeys, other.trackKeys);
+
+  @override
+  int get hashCode => Object.hashAll(trackKeys);
 }
 
 class LibraryCollectionsState {
@@ -279,6 +328,10 @@ class PlaylistAddBatchResult {
 class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
   final LibraryCollectionsDatabase _db = LibraryCollectionsDatabase.instance;
   Future<void>? _loadFuture;
+
+  void _invalidatePlaylistPickerSummaries() {
+    ref.invalidate(libraryPlaylistPickerSummariesProvider);
+  }
 
   @override
   LibraryCollectionsState build() {
@@ -494,6 +547,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
       updatedAt: now.toIso8601String(),
     );
     state = state.copyWith(playlists: [playlist, ...state.playlists]);
+    _invalidatePlaylistPickerSummaries();
     return id;
   }
 
@@ -513,6 +567,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
     _replacePlaylistById(playlistId, (playlist) {
       return playlist.copyWith(name: trimmed, updatedAt: now);
     });
+    _invalidatePlaylistPickerSummaries();
   }
 
   Future<void> deletePlaylist(String playlistId) async {
@@ -523,6 +578,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
     await _db.deletePlaylist(playlistId);
     final updatedPlaylists = [...state.playlists]..removeAt(playlistIndex);
     state = state.copyWith(playlists: updatedPlaylists);
+    _invalidatePlaylistPickerSummaries();
   }
 
   Future<bool> addTrackToPlaylist(String playlistId, Track track) async {
@@ -550,6 +606,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
       );
     });
     if (!changed) return false;
+    _invalidatePlaylistPickerSummaries();
     return true;
   }
 
@@ -615,6 +672,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
         alreadyInPlaylistCount: alreadyInPlaylistCount,
       );
     }
+    _invalidatePlaylistPickerSummaries();
     return PlaylistAddBatchResult(
       addedCount: entriesToAdd.length,
       alreadyInPlaylistCount: alreadyInPlaylistCount,
@@ -642,6 +700,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
       if (nextTracks.length == playlist.tracks.length) return playlist;
       return playlist.copyWith(tracks: nextTracks, updatedAt: now);
     });
+    _invalidatePlaylistPickerSummaries();
   }
 
   Future<Directory> _playlistCoversDir() async {
@@ -678,6 +737,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
       if (playlist.coverImagePath == destPath) return playlist;
       return playlist.copyWith(coverImagePath: () => destPath, updatedAt: now);
     });
+    _invalidatePlaylistPickerSummaries();
   }
 
   Future<void> removePlaylistCover(String playlistId) async {
@@ -703,6 +763,7 @@ class LibraryCollectionsNotifier extends Notifier<LibraryCollectionsState> {
       if (playlist.coverImagePath == null) return playlist;
       return playlist.copyWith(coverImagePath: () => null, updatedAt: now);
     });
+    _invalidatePlaylistPickerSummaries();
   }
 }
 
@@ -710,3 +771,27 @@ final libraryCollectionsProvider =
     NotifierProvider<LibraryCollectionsNotifier, LibraryCollectionsState>(
       LibraryCollectionsNotifier.new,
     );
+
+final libraryPlaylistPickerSummariesProvider =
+    FutureProvider.family<
+      List<PlaylistPickerSummary>,
+      PlaylistPickerSummaryRequest
+    >((ref, request) async {
+      final db = LibraryCollectionsDatabase.instance;
+      await db.migrateFromSharedPreferences();
+      final rows = await db.loadPlaylistPickerSummaries(request.trackKeys);
+      return rows
+          .map(
+            (row) => PlaylistPickerSummary(
+              id: row.id,
+              name: row.name,
+              coverImagePath: row.coverImagePath,
+              previewCover: row.previewCover,
+              createdAt: row.createdAt,
+              updatedAt: row.updatedAt,
+              trackCount: row.trackCount,
+              containsAllRequestedTracks: row.containsAllRequestedTracks,
+            ),
+          )
+          .toList(growable: false);
+    });
