@@ -295,7 +295,7 @@ func (s *extensionStore) getExtensionsWithStatus(forceRefresh bool) ([]storeExte
 		return nil, err
 	}
 
-	manager := GetExtensionManager()
+	manager := getExtensionManager()
 	installed := make(map[string]string) // id -> version
 
 	if manager != nil {
