@@ -5,151 +5,151 @@
   "@appName": {
     "description": "App name - DO NOT TRANSLATE"
   },
-  "navHome": "Home",
+  "navHome": "Головна",
   "@navHome": {
     "description": "Bottom navigation - Home tab"
   },
-  "navLibrary": "Library",
+  "navLibrary": "Бібліотека",
   "@navLibrary": {
     "description": "Bottom navigation - Library tab"
   },
-  "navSettings": "Settings",
+  "navSettings": "Налаштування",
   "@navSettings": {
     "description": "Bottom navigation - Settings tab"
   },
-  "navStore": "Repo",
+  "navStore": "Репозиторій",
   "@navStore": {
     "description": "Bottom navigation - Extension store tab"
   },
-  "homeTitle": "Home",
+  "homeTitle": "Головна",
   "@homeTitle": {
     "description": "Home screen title"
   },
-  "homeSubtitle": "Paste a supported URL or search by name",
+  "homeSubtitle": "Вставте URL-адресу яка підтримується, або виконайте пошук за назвою",
   "@homeSubtitle": {
     "description": "Subtitle shown below search box"
   },
-  "homeSupports": "Supports: Track, Album, Playlist, Artist URLs",
+  "homeSupports": "Підтримує: URL-адреси треків, альбомів, списків відтворення, виконавців",
   "@homeSupports": {
     "description": "Info text about supported URL types"
   },
-  "homeRecent": "Recent",
+  "homeRecent": "Нещодавні",
   "@homeRecent": {
     "description": "Section header for recent searches"
   },
-  "historyFilterAll": "All",
+  "historyFilterAll": "Усі",
   "@historyFilterAll": {
     "description": "Filter chip - show all items"
   },
-  "historyFilterAlbums": "Albums",
+  "historyFilterAlbums": "Альбоми",
   "@historyFilterAlbums": {
     "description": "Filter chip - show albums only"
   },
-  "historyFilterSingles": "Singles",
+  "historyFilterSingles": "Сингли",
   "@historyFilterSingles": {
     "description": "Filter chip - show singles only"
   },
-  "historySearchHint": "Search history...",
+  "historySearchHint": "Історія пошуку...",
   "@historySearchHint": {
     "description": "Search bar placeholder in history"
   },
-  "settingsTitle": "Settings",
+  "settingsTitle": "Налаштування",
   "@settingsTitle": {
     "description": "Settings screen title"
   },
-  "settingsDownload": "Download",
+  "settingsDownload": "Завантаження",
   "@settingsDownload": {
     "description": "Settings section - download options"
   },
-  "settingsAppearance": "Appearance",
+  "settingsAppearance": "Зовнішній вигляд",
   "@settingsAppearance": {
     "description": "Settings section - visual customization"
   },
-  "settingsOptions": "Options",
+  "settingsOptions": "Опції",
   "@settingsOptions": {
     "description": "Settings section - app options"
   },
-  "settingsExtensions": "Extensions",
+  "settingsExtensions": "Розширення",
   "@settingsExtensions": {
     "description": "Settings section - extension management"
   },
-  "settingsAbout": "About",
+  "settingsAbout": "Про додаток",
   "@settingsAbout": {
     "description": "Settings section - app info"
   },
-  "downloadTitle": "Download",
+  "downloadTitle": "Завантажити",
   "@downloadTitle": {
     "description": "Download settings page title"
   },
-  "downloadAskQualitySubtitle": "Show quality picker for each download",
+  "downloadAskQualitySubtitle": "Показувати вікно вибору якості для кожного завантаження",
   "@downloadAskQualitySubtitle": {
     "description": "Subtitle for ask quality toggle"
   },
-  "downloadFilenameFormat": "Filename Format",
+  "downloadFilenameFormat": "Формат імені файлу",
   "@downloadFilenameFormat": {
     "description": "Setting for output filename pattern"
   },
-  "downloadSingleFilenameFormat": "Single Filename Format",
+  "downloadSingleFilenameFormat": "Формат імені одного файлу",
   "@downloadSingleFilenameFormat": {
     "description": "Setting for output filename pattern for singles/EPs"
   },
-  "downloadSingleFilenameFormatDescription": "Filename pattern for singles and EPs. Uses the same tags as the album format.",
+  "downloadSingleFilenameFormatDescription": "Шаблон назви файлу для синглів та міні-альбомів. Використовує ті самі теги, що й формат альбому.",
   "@downloadSingleFilenameFormatDescription": {
     "description": "Subtitle description for single filename format setting"
   },
-  "downloadFolderOrganization": "Folder Organization",
+  "downloadFolderOrganization": "Організація папок",
   "@downloadFolderOrganization": {
     "description": "Title of the folder organization picker bottom sheet"
   },
-  "appearanceTitle": "Appearance",
+  "appearanceTitle": "Зовнішній вигляд",
   "@appearanceTitle": {
     "description": "Appearance settings page title"
   },
-  "appearanceThemeSystem": "System",
+  "appearanceThemeSystem": "Системний",
   "@appearanceThemeSystem": {
     "description": "Follow system theme"
   },
-  "appearanceThemeLight": "Light",
+  "appearanceThemeLight": "Світлий",
   "@appearanceThemeLight": {
     "description": "Light theme"
   },
-  "appearanceThemeDark": "Dark",
+  "appearanceThemeDark": "Темний",
   "@appearanceThemeDark": {
     "description": "Dark theme"
   },
-  "appearanceDynamicColor": "Dynamic Color",
+  "appearanceDynamicColor": "Динамічний колір",
   "@appearanceDynamicColor": {
     "description": "Material You dynamic colors"
   },
-  "appearanceDynamicColorSubtitle": "Use colors from your wallpaper",
+  "appearanceDynamicColorSubtitle": "Використати кольори зі своїх шпалер",
   "@appearanceDynamicColorSubtitle": {
     "description": "Subtitle for dynamic color"
   },
-  "appearanceHistoryView": "History View",
+  "appearanceHistoryView": "Історія переглядів",
   "@appearanceHistoryView": {
     "description": "Layout style for history"
   },
-  "appearanceHistoryViewList": "List",
+  "appearanceHistoryViewList": "Список",
   "@appearanceHistoryViewList": {
     "description": "List layout option"
   },
-  "appearanceHistoryViewGrid": "Grid",
+  "appearanceHistoryViewGrid": "Сітка",
   "@appearanceHistoryViewGrid": {
     "description": "Grid layout option"
   },
-  "optionsTitle": "Options",
+  "optionsTitle": "Опції",
   "@optionsTitle": {
     "description": "Options settings page title"
   },
-  "optionsPrimaryProvider": "Primary Provider",
+  "optionsPrimaryProvider": "Основний постачальник",
   "@optionsPrimaryProvider": {
     "description": "Main search provider setting"
   },
-  "optionsPrimaryProviderSubtitle": "Service used when searching by track name.",
+  "optionsPrimaryProviderSubtitle": "Розширення будуть випробувані першими",
   "@optionsPrimaryProviderSubtitle": {
     "description": "Subtitle for primary provider"
   },
-  "optionsUsingExtension": "Using extension: {extensionName}",
+  "optionsUsingExtension": "Використання розширення: {extensionName}",
   "@optionsUsingExtension": {
     "description": "Shows active extension name",
     "placeholders": {
@@ -158,83 +158,83 @@
       }
     }
   },
-  "optionsSwitchBack": "Tap Deezer or Spotify to switch back from extension",
+  "optionsSwitchBack": "Натисніть Deezer або Spotify, щоб повернутися до розширення",
   "@optionsSwitchBack": {
     "description": "Hint to switch back to built-in providers"
   },
-  "optionsAutoFallback": "Auto Fallback",
+  "optionsAutoFallback": "Автоматичний резервний варіант",
   "@optionsAutoFallback": {
     "description": "Auto-retry with other services"
   },
-  "optionsAutoFallbackSubtitle": "Try other services if download fails",
+  "optionsAutoFallbackSubtitle": "Спробувати інші сервіси, якщо завантаження не вдається",
   "@optionsAutoFallbackSubtitle": {
     "description": "Subtitle for auto fallback"
   },
-  "optionsUseExtensionProviders": "Use Extension Providers",
+  "optionsUseExtensionProviders": "Використати постачальників розширень",
   "@optionsUseExtensionProviders": {
     "description": "Enable extension download providers"
   },
-  "optionsUseExtensionProvidersOn": "Extensions will be tried first",
+  "optionsUseExtensionProvidersOn": "Розширення будуть випробувані першими",
   "@optionsUseExtensionProvidersOn": {
     "description": "Status when extension providers enabled"
   },
-  "optionsUseExtensionProvidersOff": "Using built-in providers only",
+  "optionsUseExtensionProvidersOff": "Використати лише вбудованих постачальників",
   "@optionsUseExtensionProvidersOff": {
     "description": "Status when extension providers disabled"
   },
-  "optionsEmbedLyrics": "Embed Lyrics",
+  "optionsEmbedLyrics": "Вбудований текст пісні",
   "@optionsEmbedLyrics": {
     "description": "Embed lyrics in audio files"
   },
-  "optionsEmbedLyricsSubtitle": "Embed synced lyrics into FLAC files",
+  "optionsEmbedLyricsSubtitle": "Вбудовувати синхронізовані тексти пісень у файли FLAC",
   "@optionsEmbedLyricsSubtitle": {
     "description": "Subtitle for embed lyrics"
   },
-  "optionsMaxQualityCover": "Max Quality Cover",
+  "optionsMaxQualityCover": "Максимальна якість обкладинки",
   "@optionsMaxQualityCover": {
     "description": "Download highest quality album art"
   },
-  "optionsMaxQualityCoverSubtitle": "Download highest resolution cover art",
+  "optionsMaxQualityCoverSubtitle": "Завантажити обкладинку з найвищою роздільною здатністю",
   "@optionsMaxQualityCoverSubtitle": {
     "description": "Subtitle for max quality cover"
   },
-  "optionsReplayGain": "ReplayGain",
+  "optionsReplayGain": "Нормалізація звуку",
   "@optionsReplayGain": {
     "description": "Title for ReplayGain setting toggle"
   },
-  "optionsReplayGainSubtitleOn": "Scan loudness and embed ReplayGain tags (EBU R128)",
+  "optionsReplayGainSubtitleOn": "Сканування гучності та вбудовування тегів нормалізації звуку (EBU R128)",
   "@optionsReplayGainSubtitleOn": {
     "description": "Subtitle when ReplayGain is enabled"
   },
-  "optionsReplayGainSubtitleOff": "Disabled: no loudness normalization tags",
+  "optionsReplayGainSubtitleOff": "Вимкнено: немає тегів нормалізації гучності",
   "@optionsReplayGainSubtitleOff": {
     "description": "Subtitle when ReplayGain is disabled"
   },
-  "optionsArtistTagMode": "Artist Tag Mode",
+  "optionsArtistTagMode": "Режим тегу виконавця",
   "@optionsArtistTagMode": {
     "description": "Setting title for how artist metadata is written into files"
   },
-  "optionsArtistTagModeDescription": "Choose how multiple artists are written into embedded tags.",
+  "optionsArtistTagModeDescription": "Виберіть, як будуть записуватися кілька виконавців у вбудовані теги.",
   "@optionsArtistTagModeDescription": {
     "description": "Bottom-sheet description for artist tag mode setting"
   },
-  "optionsArtistTagModeJoined": "Single joined value",
+  "optionsArtistTagModeJoined": "Одне об'єднане значення",
   "@optionsArtistTagModeJoined": {
     "description": "Artist tag mode option that joins multiple artists into one value"
   },
-  "optionsArtistTagModeJoinedSubtitle": "Write one ARTIST value like \"Artist A, Artist B\" for maximum player compatibility.",
+  "optionsArtistTagModeJoinedSubtitle": "Для максимальної сумісності програвача напишіть одне значення ARTIST, наприклад, «Виконавець A, Виконавець B».",
   "@optionsArtistTagModeJoinedSubtitle": {
     "description": "Subtitle for joined artist tag mode"
   },
-  "optionsArtistTagModeSplitVorbis": "Split tags for FLAC/Opus",
+  "optionsArtistTagModeSplitVorbis": "Розділені теги для FLAC/Opus",
   "@optionsArtistTagModeSplitVorbis": {
     "description": "Artist tag mode option that writes repeated ARTIST tags for Vorbis formats"
   },
-  "optionsArtistTagModeSplitVorbisSubtitle": "Write one artist tag per artist for FLAC and Opus; MP3 and M4A stay joined.",
+  "optionsArtistTagModeSplitVorbisSubtitle": "Для FLAC та Opus на кожного виконавця додати окремий тег виконавця; MP3 та M4A залишаються об’єднаними.",
   "@optionsArtistTagModeSplitVorbisSubtitle": {
     "description": "Subtitle for split Vorbis artist tag mode"
   },
-  "optionsConcurrentDownloads": "Concurrent Downloads",
+  "optionsConcurrentDownloads": "Кількість одночасних завантажень",
   "@optionsConcurrentDownloads": {
     "description": "Number of parallel downloads"
   },
@@ -251,67 +251,67 @@
       }
     }
   },
-  "optionsConcurrentWarning": "Parallel downloads may trigger rate limiting",
+  "optionsConcurrentWarning": "Паралельні завантаження можуть призвести до обмеження швидкості",
   "@optionsConcurrentWarning": {
     "description": "Warning about rate limits"
   },
-  "optionsExtensionStore": "Extension Repo",
+  "optionsExtensionStore": "Репозиторій розширень",
   "@optionsExtensionStore": {
     "description": "Show/hide store tab"
   },
-  "optionsExtensionStoreSubtitle": "Show Repo tab in navigation",
+  "optionsExtensionStoreSubtitle": "Показати вкладку «Репозиторій» у навігації",
   "@optionsExtensionStoreSubtitle": {
     "description": "Subtitle for extension store toggle"
   },
-  "optionsCheckUpdates": "Check for Updates",
+  "optionsCheckUpdates": "Перевірити наявність оновлень",
   "@optionsCheckUpdates": {
     "description": "Auto update check toggle"
   },
-  "optionsCheckUpdatesSubtitle": "Notify when new version is available",
+  "optionsCheckUpdatesSubtitle": "Повідомити, коли буде доступна нова версія",
   "@optionsCheckUpdatesSubtitle": {
     "description": "Subtitle for update check"
   },
-  "optionsUpdateChannel": "Update Channel",
+  "optionsUpdateChannel": "Канал оновлень",
   "@optionsUpdateChannel": {
     "description": "Stable vs preview releases"
   },
-  "optionsUpdateChannelStable": "Stable releases only",
+  "optionsUpdateChannelStable": "Тільки стабільні релізи",
   "@optionsUpdateChannelStable": {
     "description": "Only stable updates"
   },
-  "optionsUpdateChannelPreview": "Get preview releases",
+  "optionsUpdateChannelPreview": "Отримати попередні релізи",
   "@optionsUpdateChannelPreview": {
     "description": "Include beta/preview updates"
   },
-  "optionsUpdateChannelWarning": "Preview may contain bugs or incomplete features",
+  "optionsUpdateChannelWarning": "Тестовий реліз може містити помилки або неповні функції",
   "@optionsUpdateChannelWarning": {
     "description": "Warning about preview channel"
   },
-  "optionsClearHistory": "Clear Download History",
+  "optionsClearHistory": "Очистити історію завантажень",
   "@optionsClearHistory": {
     "description": "Delete all download history"
   },
-  "optionsClearHistorySubtitle": "Remove all downloaded tracks from history",
+  "optionsClearHistorySubtitle": "Видалити всі завантажені треки з історії",
   "@optionsClearHistorySubtitle": {
     "description": "Subtitle for clear history"
   },
-  "optionsDetailedLogging": "Detailed Logging",
+  "optionsDetailedLogging": "Детальне журналювання",
   "@optionsDetailedLogging": {
     "description": "Enable verbose logs for debugging"
   },
-  "optionsDetailedLoggingOn": "Detailed logs are being recorded",
+  "optionsDetailedLoggingOn": "Ведеться детальний журнал",
   "@optionsDetailedLoggingOn": {
     "description": "Status when logging enabled"
   },
-  "optionsDetailedLoggingOff": "Enable for bug reports",
+  "optionsDetailedLoggingOff": "Увімкнути для звітів про помилки",
   "@optionsDetailedLoggingOff": {
     "description": "Status when logging disabled"
   },
-  "optionsSpotifyCredentials": "Spotify Credentials",
+  "optionsSpotifyCredentials": "Облікові дані Spotify",
   "@optionsSpotifyCredentials": {
     "description": "Spotify API credentials setting"
   },
-  "optionsSpotifyCredentialsConfigured": "Client ID: {clientId}...",
+  "optionsSpotifyCredentialsConfigured": "Ідентифікатор клієнта: {clientId}...",
   "@optionsSpotifyCredentialsConfigured": {
     "description": "Shows configured client ID preview",
     "placeholders": {
@@ -320,27 +320,27 @@
       }
     }
   },
-  "optionsSpotifyCredentialsRequired": "Required - tap to configure",
+  "optionsSpotifyCredentialsRequired": "Обов'язковий – торкніться, щоб налаштувати",
   "@optionsSpotifyCredentialsRequired": {
     "description": "Prompt to set up credentials"
   },
-  "optionsSpotifyWarning": "Spotify requires your own API credentials. Get them free from developer.spotify.com",
+  "optionsSpotifyWarning": "Spotify вимагає ваших власних облікових даних API. Отримайте їх безкоштовно на сайті developer.spotify.com",
   "@optionsSpotifyWarning": {
     "description": "Info about Spotify API requirement"
   },
-  "optionsSpotifyDeprecationWarning": "Spotify search will be deprecated on March 3, 2026 due to Spotify API changes. Please switch to Deezer.",
+  "optionsSpotifyDeprecationWarning": "Пошук Spotify буде припинено 3 березня 2026 року через зміни в API Spotify. Будь ласка, перейдіть на Deezer.",
   "@optionsSpotifyDeprecationWarning": {
     "description": "Warning about Spotify API deprecation"
   },
-  "extensionsTitle": "Extensions",
+  "extensionsTitle": "Розширення",
   "@extensionsTitle": {
     "description": "Extensions page title"
   },
-  "extensionsDisabled": "Disabled",
+  "extensionsDisabled": "Вимкнені",
   "@extensionsDisabled": {
     "description": "Extension status - inactive"
   },
-  "extensionsVersion": "Version {version}",
+  "extensionsVersion": "Версія {version}",
   "@extensionsVersion": {
     "description": "Extension version display",
     "placeholders": {
@@ -349,7 +349,7 @@
       }
     }
   },
-  "extensionsAuthor": "by {author}",
+  "extensionsAuthor": "від {author}",
   "@extensionsAuthor": {
     "description": "Extension author credit",
     "placeholders": {
@@ -358,123 +358,123 @@
       }
     }
   },
-  "extensionsUninstall": "Uninstall",
+  "extensionsUninstall": "Видалити",
   "@extensionsUninstall": {
     "description": "Uninstall extension button"
   },
-  "storeTitle": "Extension Repo",
+  "storeTitle": "Репозиторій розширень",
   "@storeTitle": {
     "description": "Store screen title"
   },
-  "storeSearch": "Search extensions...",
+  "storeSearch": "Розширення пошуку...",
   "@storeSearch": {
     "description": "Store search placeholder"
   },
-  "storeInstall": "Install",
+  "storeInstall": "Встановити",
   "@storeInstall": {
     "description": "Install extension button"
   },
-  "storeInstalled": "Installed",
+  "storeInstalled": "Встановлені",
   "@storeInstalled": {
     "description": "Already installed badge"
   },
-  "storeUpdate": "Update",
+  "storeUpdate": "Оновлені",
   "@storeUpdate": {
     "description": "Update available button"
   },
-  "aboutTitle": "About",
+  "aboutTitle": "Про нас",
   "@aboutTitle": {
     "description": "About page title"
   },
-  "aboutContributors": "Contributors",
+  "aboutContributors": "Автори",
   "@aboutContributors": {
     "description": "Section for contributors"
   },
-  "aboutMobileDeveloper": "Mobile version developer",
+  "aboutMobileDeveloper": "Розробник мобільної версії",
   "@aboutMobileDeveloper": {
     "description": "Role description for mobile dev"
   },
-  "aboutOriginalCreator": "Creator of the original SpotiFLAC",
+  "aboutOriginalCreator": "Творець оригінального SpotiFLAC",
   "@aboutOriginalCreator": {
     "description": "Role description for original creator"
   },
-  "aboutLogoArtist": "The talented artist who created our beautiful app logo!",
+  "aboutLogoArtist": "Талановитий художник, який створив чудовий логотип нашого додатку!",
   "@aboutLogoArtist": {
     "description": "Role description for logo artist"
   },
-  "aboutTranslators": "Translators",
+  "aboutTranslators": "Перекладачі",
   "@aboutTranslators": {
     "description": "Section for translators"
   },
-  "aboutSpecialThanks": "Special Thanks",
+  "aboutSpecialThanks": "Особлива подяка",
   "@aboutSpecialThanks": {
     "description": "Section for special thanks"
   },
-  "aboutLinks": "Links",
+  "aboutLinks": "Посилання",
   "@aboutLinks": {
     "description": "Section for external links"
   },
-  "aboutMobileSource": "Mobile source code",
+  "aboutMobileSource": "Мобільний вихідний код",
   "@aboutMobileSource": {
     "description": "Link to mobile GitHub repo"
   },
-  "aboutPCSource": "PC source code",
+  "aboutPCSource": "Вихідний код для ПК",
   "@aboutPCSource": {
     "description": "Link to PC GitHub repo"
   },
-  "aboutReportIssue": "Report an issue",
+  "aboutReportIssue": "Повідомити про проблему",
   "@aboutReportIssue": {
     "description": "Link to report bugs"
   },
-  "aboutReportIssueSubtitle": "Report any problems you encounter",
+  "aboutReportIssueSubtitle": "Повідомити про будь-які проблеми, з якими ви зіткнулися",
   "@aboutReportIssueSubtitle": {
     "description": "Subtitle for report issue"
   },
-  "aboutFeatureRequest": "Feature request",
+  "aboutFeatureRequest": "Запит на функцію",
   "@aboutFeatureRequest": {
     "description": "Link to suggest features"
   },
-  "aboutFeatureRequestSubtitle": "Suggest new features for the app",
+  "aboutFeatureRequestSubtitle": "Запропонувати нові функції для програми",
   "@aboutFeatureRequestSubtitle": {
     "description": "Subtitle for feature request"
   },
-  "aboutTelegramChannel": "Telegram Channel",
+  "aboutTelegramChannel": "Телеграм-канал",
   "@aboutTelegramChannel": {
     "description": "Link to Telegram channel"
   },
-  "aboutTelegramChannelSubtitle": "Announcements and updates",
+  "aboutTelegramChannelSubtitle": "Оголошення та оновлення",
   "@aboutTelegramChannelSubtitle": {
     "description": "Subtitle for Telegram channel"
   },
-  "aboutTelegramChat": "Telegram Community",
+  "aboutTelegramChat": "Telegram Спільнота",
   "@aboutTelegramChat": {
     "description": "Link to Telegram chat group"
   },
-  "aboutTelegramChatSubtitle": "Chat with other users",
+  "aboutTelegramChatSubtitle": "Спілкуватися з іншими користувачами",
   "@aboutTelegramChatSubtitle": {
     "description": "Subtitle for Telegram chat"
   },
-  "aboutSocial": "Social",
+  "aboutSocial": "Соціальні мережі",
   "@aboutSocial": {
     "description": "Section for social links"
   },
-  "aboutApp": "App",
+  "aboutApp": "Додаток",
   "@aboutApp": {
     "description": "Section for app info"
   },
-  "aboutVersion": "Version",
+  "aboutVersion": "Версія",
   "@aboutVersion": {
     "description": "Version info label"
   },
-  "aboutBinimumDesc": "The creator of QQDL & HiFi API. Without this API, Tidal downloads wouldn't exist!",
+  "aboutBinimumDesc": "Творець QQDL та HiFi API. Без цього API завантажень Tidal'а не існувало б!",
   "@aboutBinimumDesc": {
     "description": "Credit description for binimum"
   },
-  "aboutSachinsenalDesc": "The original HiFi project creator. The foundation of Tidal integration!",
+  "aboutSachinsenalDesc": "Оригінальний творець HiFi-проектів. Основа інтеграції Tidal!",
   "@aboutSachinsenalDesc": {
     "description": "Credit description for sachinsenal0x64"
   },
-  "aboutSjdonadoDesc": "Creator of I Don't Have Spotify (IDHS). The fallback link resolver that saves the day!",
+  "aboutSjdonadoDesc": "Творець I Don't Have Spotify (IDHS). Резервний розв'язувач посилань, який рятує становище!",
   "@aboutSjdonadoDesc": {
     "description": "Credit description for sjdonado"
   },
@@ -482,7 +482,7 @@
   "@aboutDabMusic": {
     "description": "Name of Qobuz API service - DO NOT TRANSLATE"
   },
-  "aboutDabMusicDesc": "The best Qobuz streaming API. Hi-Res downloads wouldn't be possible without this!",
+  "aboutDabMusicDesc": "Найкращий API для потокової передачі Qobuz. Завантаження високої роздільної здатності було б неможливим без нього!",
   "@aboutDabMusicDesc": {
     "description": "Credit for DAB Music API"
   },
@@ -490,31 +490,31 @@
   "@aboutSpotiSaver": {
     "description": "Name of SpotiSaver API service - DO NOT TRANSLATE"
   },
-  "aboutSpotiSaverDesc": "Tidal Hi-Res FLAC streaming endpoints. A key piece of the lossless puzzle!",
+  "aboutSpotiSaverDesc": "Кінцеві точки потокового передавання Tidal Hi-Res FLAC. Ключовий елемент пазлу музики без втрат!",
   "@aboutSpotiSaverDesc": {
     "description": "Credit for SpotiSaver API"
   },
-  "aboutAppDescription": "Download Spotify tracks in lossless quality from Tidal and Qobuz.",
+  "aboutAppDescription": "Кінцеві точки потокового передавання Tidal Hi-Res FLAC. Ключовий елемент пазлу музики без втрат.",
   "@aboutAppDescription": {
     "description": "App description in header card"
   },
-  "artistAlbums": "Albums",
+  "artistAlbums": "Альбоми",
   "@artistAlbums": {
     "description": "Section header for artist albums"
   },
-  "artistSingles": "Singles & EPs",
+  "artistSingles": "Сингли та міні-альбоми",
   "@artistSingles": {
     "description": "Section header for singles/EPs"
   },
-  "artistCompilations": "Compilations",
+  "artistCompilations": "Збірники",
   "@artistCompilations": {
     "description": "Section header for compilations"
   },
-  "artistPopular": "Popular",
+  "artistPopular": "Популярні",
   "@artistPopular": {
     "description": "Section header for popular/top tracks"
   },
-  "artistMonthlyListeners": "{count} monthly listeners",
+  "artistMonthlyListeners": "{count} слухачів щомісяця",
   "@artistMonthlyListeners": {
     "description": "Monthly listener count display",
     "placeholders": {
@@ -524,47 +524,47 @@
       }
     }
   },
-  "trackMetadataService": "Service",
+  "trackMetadataService": "Сервіс",
   "@trackMetadataService": {
     "description": "Metadata field - download service used"
   },
-  "trackMetadataPlay": "Play",
+  "trackMetadataPlay": "Прослухати",
   "@trackMetadataPlay": {
     "description": "Action button - play track"
   },
-  "trackMetadataShare": "Share",
+  "trackMetadataShare": "Поділитися",
   "@trackMetadataShare": {
     "description": "Action button - share track"
   },
-  "trackMetadataDelete": "Delete",
+  "trackMetadataDelete": "Видалити",
   "@trackMetadataDelete": {
     "description": "Action button - delete track"
   },
-  "setupGrantPermission": "Grant Permission",
+  "setupGrantPermission": "Надати дозвіл",
   "@setupGrantPermission": {
     "description": "Button to request permission"
   },
-  "setupSkip": "Skip for now",
+  "setupSkip": "Пропустити поки що",
   "@setupSkip": {
     "description": "Skip current step button"
   },
-  "setupStorageAccessRequired": "Storage Access Required",
+  "setupStorageAccessRequired": "Потрібен доступ до сховища",
   "@setupStorageAccessRequired": {
     "description": "Title when storage access needed"
   },
-  "setupStorageAccessMessageAndroid11": "Android 11+ requires \"All files access\" permission to save files to your chosen download folder.",
+  "setupStorageAccessMessageAndroid11": "Для збереження файлів у вибрану папку завантажень для Android 11+ потрібен дозвіл «Доступ до всіх файлів».",
   "@setupStorageAccessMessageAndroid11": {
     "description": "Android 11+ specific explanation"
   },
-  "setupOpenSettings": "Open Settings",
+  "setupOpenSettings": "Відкрити налаштування",
   "@setupOpenSettings": {
     "description": "Button to open system settings"
   },
-  "setupPermissionDeniedMessage": "Permission denied. Please grant all permissions to continue.",
+  "setupPermissionDeniedMessage": "Дозвіл відхилено. Будь ласка, надайте всі дозволи, щоб продовжити.",
   "@setupPermissionDeniedMessage": {
     "description": "Error when permission denied"
   },
-  "setupPermissionRequired": "{permissionType} Permission Required",
+  "setupPermissionRequired": "{permissionType} Потрібен дозвіл",
   "@setupPermissionRequired": {
     "description": "Generic permission required title",
     "placeholders": {
@@ -574,7 +574,7 @@
       }
     }
   },
-  "setupPermissionRequiredMessage": "{permissionType} permission is required for the best experience. You can change this later in Settings.",
+  "setupPermissionRequiredMessage": "{permissionType} Для найкращого досвіду потрібен дозвіл. Ви можете змінити це пізніше в налаштуваннях.",
   "@setupPermissionRequiredMessage": {
     "description": "Generic permission required message",
     "placeholders": {
@@ -583,179 +583,179 @@
       }
     }
   },
-  "setupUseDefaultFolder": "Use Default Folder?",
+  "setupUseDefaultFolder": "Використати папку за замовчуванням?",
   "@setupUseDefaultFolder": {
     "description": "Dialog title for default folder"
   },
-  "setupNoFolderSelected": "No folder selected. Would you like to use the default Music folder?",
+  "setupNoFolderSelected": "Папку не вибрано. Бажаєте використовувати папку «Музика» за замовчуванням?",
   "@setupNoFolderSelected": {
     "description": "Prompt when no folder selected"
   },
-  "setupUseDefault": "Use Default",
+  "setupUseDefault": "Використовувати за замовчуванням",
   "@setupUseDefault": {
     "description": "Button to use default folder"
   },
-  "setupDownloadLocationTitle": "Download Location",
+  "setupDownloadLocationTitle": "Розташування завантаження",
   "@setupDownloadLocationTitle": {
     "description": "Download location dialog title"
   },
-  "setupDownloadLocationIosMessage": "On iOS, downloads are saved to the app's Documents folder. You can access them via the Files app.",
+  "setupDownloadLocationIosMessage": "На iOS завантаження зберігаються в папці «Документи» програми. Ви можете отримати до них доступ через програму «Файли».",
   "@setupDownloadLocationIosMessage": {
     "description": "iOS-specific folder info"
   },
-  "setupAppDocumentsFolder": "App Documents Folder",
+  "setupAppDocumentsFolder": "Папка з документами програми",
   "@setupAppDocumentsFolder": {
     "description": "iOS documents folder option"
   },
-  "setupAppDocumentsFolderSubtitle": "Recommended - accessible via Files app",
+  "setupAppDocumentsFolderSubtitle": "Рекомендація – доступно через додаток Файли",
   "@setupAppDocumentsFolderSubtitle": {
     "description": "Subtitle for documents folder"
   },
-  "setupChooseFromFiles": "Choose from Files",
+  "setupChooseFromFiles": "Вибрати з файлів",
   "@setupChooseFromFiles": {
     "description": "iOS file picker option"
   },
-  "setupChooseFromFilesSubtitle": "Select iCloud or other location",
+  "setupChooseFromFilesSubtitle": "Виберіть iCloud або інше місцезнаходження",
   "@setupChooseFromFilesSubtitle": {
     "description": "Subtitle for file picker"
   },
-  "setupIosEmptyFolderWarning": "iOS limitation: Empty folders cannot be selected. Choose a folder with at least one file.",
+  "setupIosEmptyFolderWarning": "Обмеження iOS: Не можна вибрати порожні папки. Виберіть папку, яка містить принаймні один файл.",
   "@setupIosEmptyFolderWarning": {
     "description": "iOS folder selection warning"
   },
-  "setupIcloudNotSupported": "iCloud Drive is not supported. Please use the app Documents folder.",
+  "setupIcloudNotSupported": "iCloud Drive не підтримується. Будь ласка, скористайтеся папкою «Документи» програми.",
   "@setupIcloudNotSupported": {
     "description": "Error when user selects iCloud Drive on iOS"
   },
-  "setupDownloadInFlac": "Download Spotify tracks in FLAC",
+  "setupDownloadInFlac": "Завантажити треки Spotify у форматі FLAC",
   "@setupDownloadInFlac": {
     "description": "App tagline in setup"
   },
-  "setupStorageGranted": "Storage Permission Granted!",
+  "setupStorageGranted": "Дозвіл на зберігання надано!",
   "@setupStorageGranted": {
     "description": "Success message for storage permission"
   },
-  "setupStorageRequired": "Storage Permission Required",
+  "setupStorageRequired": "Потрібен дозвіл на збереження файлів",
   "@setupStorageRequired": {
     "description": "Title when storage permission needed"
   },
-  "setupStorageDescription": "SpotiFLAC needs storage permission to save your downloaded music files.",
+  "setupStorageDescription": "SpotiFLAC потребує дозволу на збереження, щоб зберегти завантажені музичні файли.",
   "@setupStorageDescription": {
     "description": "Explanation for storage permission"
   },
-  "setupNotificationGranted": "Notification Permission Granted!",
+  "setupNotificationGranted": "Дозвіл на сповіщення надано!",
   "@setupNotificationGranted": {
     "description": "Success message for notification permission"
   },
-  "setupNotificationEnable": "Enable Notifications",
+  "setupNotificationEnable": "Увімкнути сповіщення",
   "@setupNotificationEnable": {
     "description": "Button to enable notifications"
   },
-  "setupFolderChoose": "Choose Download Folder",
+  "setupFolderChoose": "Виберати папку для завантаження",
   "@setupFolderChoose": {
     "description": "Button to choose folder"
   },
-  "setupFolderDescription": "Select a folder where your downloaded music will be saved.",
+  "setupFolderDescription": "Виберіть папку, де буде збережено завантажену музику.",
   "@setupFolderDescription": {
     "description": "Explanation for folder selection"
   },
-  "setupSelectFolder": "Select Folder",
+  "setupSelectFolder": "Вибрати папку",
   "@setupSelectFolder": {
     "description": "Button to select folder"
   },
-  "setupEnableNotifications": "Enable Notifications",
+  "setupEnableNotifications": "Увімкнути сповіщення",
   "@setupEnableNotifications": {
     "description": "Button to enable notifications"
   },
-  "setupNotificationBackgroundDescription": "Get notified about download progress and completion. This helps you track downloads when the app is in background.",
+  "setupNotificationBackgroundDescription": "Отримуйте сповіщення про прогрес та завершення завантаження. Це допомагає відстежувати завантаження, коли програма працює у фоновому режимі.",
   "@setupNotificationBackgroundDescription": {
     "description": "Detailed notification explanation"
   },
-  "setupSkipForNow": "Skip for now",
+  "setupSkipForNow": "Пропустити поки що",
   "@setupSkipForNow": {
     "description": "Skip button text"
   },
-  "setupNext": "Next",
+  "setupNext": "Далі",
   "@setupNext": {
     "description": "Next button text"
   },
-  "setupGetStarted": "Get Started",
+  "setupGetStarted": "Почати",
   "@setupGetStarted": {
     "description": "Final setup button"
   },
-  "setupAllowAccessToManageFiles": "Please enable \"Allow access to manage all files\" in the next screen.",
+  "setupAllowAccessToManageFiles": "Будь ласка, увімкніть опцію «Дозволити доступ для керування всіма файлами» на наступному екрані.",
   "@setupAllowAccessToManageFiles": {
     "description": "Instruction for file access permission"
   },
-  "dialogCancel": "Cancel",
+  "dialogCancel": "Скасувати",
   "@dialogCancel": {
     "description": "Dialog button - cancel action"
   },
-  "dialogSave": "Save",
+  "dialogSave": "Зберегти",
   "@dialogSave": {
     "description": "Dialog button - save changes"
   },
-  "dialogDelete": "Delete",
+  "dialogDelete": "Видалити",
   "@dialogDelete": {
     "description": "Dialog button - delete item"
   },
-  "dialogRetry": "Retry",
+  "dialogRetry": "Повторити спробу",
   "@dialogRetry": {
     "description": "Dialog button - retry action"
   },
-  "dialogClear": "Clear",
+  "dialogClear": "Очистити",
   "@dialogClear": {
     "description": "Dialog button - clear items"
   },
-  "dialogDone": "Done",
+  "dialogDone": "Готово",
   "@dialogDone": {
     "description": "Dialog button - action completed"
   },
-  "dialogImport": "Import",
+  "dialogImport": "Імпорт",
   "@dialogImport": {
     "description": "Dialog button - import data"
   },
-  "dialogDownload": "Download",
+  "dialogDownload": "Завантажити",
   "@dialogDownload": {
     "description": "Confirm button in Download All dialog"
   },
-  "dialogDiscard": "Discard",
+  "dialogDiscard": "Відхилити",
   "@dialogDiscard": {
     "description": "Dialog button - discard changes"
   },
-  "dialogRemove": "Remove",
+  "dialogRemove": "Видалити",
   "@dialogRemove": {
     "description": "Dialog button - remove item"
   },
-  "dialogUninstall": "Uninstall",
+  "dialogUninstall": "Деінсталювати",
   "@dialogUninstall": {
     "description": "Dialog button - uninstall extension"
   },
-  "dialogDiscardChanges": "Discard Changes?",
+  "dialogDiscardChanges": "Відхилити зміни?",
   "@dialogDiscardChanges": {
     "description": "Dialog title - unsaved changes warning"
   },
-  "dialogUnsavedChanges": "You have unsaved changes. Do you want to discard them?",
+  "dialogUnsavedChanges": "У вас є незбережені зміни. Ви хочете їх скасувати?",
   "@dialogUnsavedChanges": {
     "description": "Dialog message - unsaved changes"
   },
-  "dialogClearAll": "Clear All",
+  "dialogClearAll": "Очистити все",
   "@dialogClearAll": {
     "description": "Dialog title - clear all items"
   },
-  "dialogRemoveExtension": "Remove Extension",
+  "dialogRemoveExtension": "Видалити розширення",
   "@dialogRemoveExtension": {
     "description": "Dialog title - uninstall extension"
   },
-  "dialogRemoveExtensionMessage": "Are you sure you want to remove this extension? This cannot be undone.",
+  "dialogRemoveExtensionMessage": "Ви впевнені, що хочете видалити це розширення? Цю дію неможливо скасувати.",
   "@dialogRemoveExtensionMessage": {
     "description": "Dialog message - uninstall confirmation"
   },
-  "dialogUninstallExtension": "Uninstall Extension?",
+  "dialogUninstallExtension": "Видалити розширення?",
   "@dialogUninstallExtension": {
     "description": "Dialog title - uninstall extension"
   },
-  "dialogUninstallExtensionMessage": "Are you sure you want to remove {extensionName}?",
+  "dialogUninstallExtensionMessage": "Ви впевнені, що хочете видалити {extensionName}?",
   "@dialogUninstallExtensionMessage": {
     "description": "Dialog message - uninstall specific extension",
     "placeholders": {
@@ -764,19 +764,19 @@
       }
     }
   },
-  "dialogClearHistoryTitle": "Clear History",
+  "dialogClearHistoryTitle": "Очистити історію",
   "@dialogClearHistoryTitle": {
     "description": "Dialog title - clear download history"
   },
-  "dialogClearHistoryMessage": "Are you sure you want to clear all download history? This cannot be undone.",
+  "dialogClearHistoryMessage": "Ви впевнені, що хочете очистити всю історію завантажень? Цю дію неможливо скасувати.",
   "@dialogClearHistoryMessage": {
     "description": "Dialog message - clear history confirmation"
   },
-  "dialogDeleteSelectedTitle": "Delete Selected",
+  "dialogDeleteSelectedTitle": "Видалити вибране",
   "@dialogDeleteSelectedTitle": {
     "description": "Dialog title - delete selected items"
   },
-  "dialogDeleteSelectedMessage": "Delete {count} {count, plural, =1{track} other{tracks}} from history?\n\nThis will also delete the files from storage.",
+  "dialogDeleteSelectedMessage": "Видалити {count} {count, plural, =1{track} other{tracks}} з історії?\n\nЦе також видалить файли з пам'яті.\ndialogDeleteSelectedMessage",
   "@dialogDeleteSelectedMessage": {
     "description": "Dialog message - delete selected tracks",
     "placeholders": {
@@ -785,12 +785,12 @@
       }
     }
   },
-  "dialogImportPlaylistTitle": "Import Playlist",
+  "dialogImportPlaylistTitle": "Імпорт списку відтворення",
   "@dialogImportPlaylistTitle": {
     "description": "Dialog title - import CSV playlist"
   },
-  "dialogImportPlaylistMessage": "Found {count} tracks in CSV. Add them to download queue?",
-  "csvImportTracks": "{count} tracks from CSV",
+  "dialogImportPlaylistMessage": "Знайдено {count} треків у CSV. Додати їх до черги завантаження?",
+  "csvImportTracks": "{count} треків з CSV",
   "@csvImportTracks": {
     "description": "Label shown in quality picker for CSV import",
     "placeholders": {
@@ -807,7 +807,7 @@
       }
     }
   },
-  "snackbarAddedToQueue": "Added \"{trackName}\" to queue",
+  "snackbarAddedToQueue": "Додано \"{trackName}\" до черги",
   "@snackbarAddedToQueue": {
     "description": "Snackbar - track added to download queue",
     "placeholders": {
@@ -816,7 +816,7 @@
       }
     }
   },
-  "snackbarAddedTracksToQueue": "Added {count} tracks to queue",
+  "snackbarAddedTracksToQueue": "Додано {count} треків до черги",
   "@snackbarAddedTracksToQueue": {
     "description": "Snackbar - multiple tracks added to queue",
     "placeholders": {
@@ -825,7 +825,7 @@
       }
     }
   },
-  "snackbarAlreadyDownloaded": "\"{trackName}\" already downloaded",
+  "snackbarAlreadyDownloaded": "\"{trackName}\" вже завантажено",
   "@snackbarAlreadyDownloaded": {
     "description": "Snackbar - track already exists",
     "placeholders": {
@@ -834,7 +834,7 @@
       }
     }
   },
-  "snackbarAlreadyInLibrary": "\"{trackName}\" already exists in your library",
+  "snackbarAlreadyInLibrary": "\"{trackName}\" вже є у вашій бібліотеці",
   "@snackbarAlreadyInLibrary": {
     "description": "Snackbar - track already exists in local library",
     "placeholders": {
@@ -843,19 +843,19 @@
       }
     }
   },
-  "snackbarHistoryCleared": "History cleared",
+  "snackbarHistoryCleared": "Історія очищена",
   "@snackbarHistoryCleared": {
     "description": "Snackbar - history deleted"
   },
-  "snackbarCredentialsSaved": "Credentials saved",
+  "snackbarCredentialsSaved": "Облікові дані збережено",
   "@snackbarCredentialsSaved": {
     "description": "Snackbar - Spotify credentials saved"
   },
-  "snackbarCredentialsCleared": "Credentials cleared",
+  "snackbarCredentialsCleared": "Облікові дані очищено",
   "@snackbarCredentialsCleared": {
     "description": "Snackbar - Spotify credentials removed"
   },
-  "snackbarDeletedTracks": "Deleted {count} {count, plural, =1{track} other{tracks}}",
+  "snackbarDeletedTracks": "Видалено {count} {count, plural, =1{track} other{tracks}}",
   "@snackbarDeletedTracks": {
     "description": "Snackbar - tracks deleted",
     "placeholders": {
@@ -864,7 +864,7 @@
       }
     }
   },
-  "snackbarCannotOpenFile": "Cannot open file: {error}",
+  "snackbarCannotOpenFile": "Не вдається відкрити файл: {error}",
   "@snackbarCannotOpenFile": {
     "description": "Snackbar - file open error",
     "placeholders": {
@@ -873,15 +873,15 @@
       }
     }
   },
-  "snackbarFillAllFields": "Please fill all fields",
+  "snackbarFillAllFields": "Будь ласка, заповніть усі поля",
   "@snackbarFillAllFields": {
     "description": "Snackbar - validation error"
   },
-  "snackbarViewQueue": "View Queue",
+  "snackbarViewQueue": "Переглянути чергу",
   "@snackbarViewQueue": {
     "description": "Snackbar action - view download queue"
   },
-  "snackbarUrlCopied": "{platform} URL copied to clipboard",
+  "snackbarUrlCopied": "{platform} URL-адреса скопійована в буфер обміну",
   "@snackbarUrlCopied": {
     "description": "Snackbar - URL copied",
     "placeholders": {
@@ -891,23 +891,23 @@
       }
     }
   },
-  "snackbarFileNotFound": "File not found",
+  "snackbarFileNotFound": "Файл не знайдено",
   "@snackbarFileNotFound": {
     "description": "Snackbar - file doesn't exist"
   },
-  "snackbarSelectExtFile": "Please select a .spotiflac-ext file",
+  "snackbarSelectExtFile": "Будь ласка, виберіть файл .spotiflac-ext",
   "@snackbarSelectExtFile": {
     "description": "Snackbar - wrong file type selected"
   },
-  "snackbarProviderPrioritySaved": "Provider priority saved",
+  "snackbarProviderPrioritySaved": "Пріоритет постачальника збережено",
   "@snackbarProviderPrioritySaved": {
     "description": "Snackbar - provider order saved"
   },
-  "snackbarMetadataProviderSaved": "Metadata provider priority saved",
+  "snackbarMetadataProviderSaved": "Пріоритет постачальника метаданих збережено",
   "@snackbarMetadataProviderSaved": {
     "description": "Snackbar - metadata provider order saved"
   },
-  "snackbarExtensionInstalled": "{extensionName} installed.",
+  "snackbarExtensionInstalled": "Розширення {extensionName} встановлено.",
   "@snackbarExtensionInstalled": {
     "description": "Snackbar - extension installed successfully",
     "placeholders": {
@@ -916,7 +916,7 @@
       }
     }
   },
-  "snackbarExtensionUpdated": "{extensionName} updated.",
+  "snackbarExtensionUpdated": "{extensionName} оновлено.",
   "@snackbarExtensionUpdated": {
     "description": "Snackbar - extension updated successfully",
     "placeholders": {
@@ -925,39 +925,39 @@
       }
     }
   },
-  "snackbarFailedToInstall": "Failed to install extension",
+  "snackbarFailedToInstall": "Не вдалося встановити розширення",
   "@snackbarFailedToInstall": {
     "description": "Snackbar - extension install error"
   },
-  "snackbarFailedToUpdate": "Failed to update extension",
+  "snackbarFailedToUpdate": "Не вдалося оновити розширення",
   "@snackbarFailedToUpdate": {
     "description": "Snackbar - extension update error"
   },
-  "errorRateLimited": "Rate Limited",
+  "errorRateLimited": "Обмежений тариф",
   "@errorRateLimited": {
     "description": "Error title - too many requests"
   },
-  "errorRateLimitedMessage": "Too many requests. Please wait a moment before searching again.",
+  "errorRateLimitedMessage": "Забагато запитів. Будь ласка, зачекайте хвилинку, перш ніж шукати знову.",
   "@errorRateLimitedMessage": {
     "description": "Error message - rate limit explanation"
   },
-  "errorNoTracksFound": "No tracks found",
+  "errorNoTracksFound": "Треків не знайдено",
   "@errorNoTracksFound": {
     "description": "Error - search returned no results"
   },
-  "errorUrlNotRecognized": "Link not recognized",
+  "errorUrlNotRecognized": "Посилання не розпізнано",
   "@errorUrlNotRecognized": {
     "description": "Error title - URL not handled by any extension or service"
   },
-  "errorUrlNotRecognizedMessage": "This link is not supported. Make sure the URL is correct and a compatible extension is installed.",
+  "errorUrlNotRecognizedMessage": "Це посилання не підтримується. Переконайтеся, що URL-адреса правильна та встановлено сумісне розширення.",
   "@errorUrlNotRecognizedMessage": {
     "description": "Error message - URL not recognized explanation"
   },
-  "errorUrlFetchFailed": "Failed to load content from this link. Please try again.",
+  "errorUrlFetchFailed": "Не вдалося завантажити вміст за цим посиланням. Спробуйте ще раз.",
   "@errorUrlFetchFailed": {
     "description": "Error message - generic URL fetch failure"
   },
-  "errorMissingExtensionSource": "Cannot load {item}: missing extension source",
+  "errorMissingExtensionSource": "Не вдається завантажити {item}: відсутній вихідний код розширення",
   "@errorMissingExtensionSource": {
     "description": "Error - extension source not available",
     "placeholders": {
@@ -966,35 +966,35 @@
       }
     }
   },
-  "actionPause": "Pause",
+  "actionPause": "Пауза",
   "@actionPause": {
     "description": "Action button - pause download"
   },
-  "actionResume": "Resume",
+  "actionResume": "Відновити",
   "@actionResume": {
     "description": "Action button - resume download"
   },
-  "actionCancel": "Cancel",
+  "actionCancel": "Скасувати",
   "@actionCancel": {
     "description": "Action button - cancel operation"
   },
-  "actionSelectAll": "Select All",
+  "actionSelectAll": "Вибрати все",
   "@actionSelectAll": {
     "description": "Action button - select all items"
   },
-  "actionDeselect": "Deselect",
+  "actionDeselect": "Скасувати вибір",
   "@actionDeselect": {
     "description": "Action button - deselect all"
   },
-  "actionRemoveCredentials": "Remove Credentials",
+  "actionRemoveCredentials": "Видалити облікові дані",
   "@actionRemoveCredentials": {
     "description": "Action button - delete Spotify credentials"
   },
-  "actionSaveCredentials": "Save Credentials",
+  "actionSaveCredentials": "Зберегти облікові дані",
   "@actionSaveCredentials": {
     "description": "Action button - save Spotify credentials"
   },
-  "selectionSelected": "{count} selected",
+  "selectionSelected": "Вибрано {count}",
   "@selectionSelected": {
     "description": "Selection count indicator",
     "placeholders": {
@@ -1003,15 +1003,15 @@
       }
     }
   },
-  "selectionAllSelected": "All tracks selected",
+  "selectionAllSelected": "Усі треки вибрано",
   "@selectionAllSelected": {
     "description": "Status - all items selected"
   },
-  "selectionSelectToDelete": "Select tracks to delete",
+  "selectionSelectToDelete": "Виберіть треки для видалення",
   "@selectionSelectToDelete": {
     "description": "Placeholder when nothing selected"
   },
-  "progressFetchingMetadata": "Fetching metadata... {current}/{total}",
+  "progressFetchingMetadata": "Отримання метаданих... {current}/{total}",
   "@progressFetchingMetadata": {
     "description": "Progress indicator - loading track info",
     "placeholders": {
@@ -1023,219 +1023,219 @@
       }
     }
   },
-  "progressReadingCsv": "Reading CSV...",
+  "progressReadingCsv": "Читання CSV-файлу...",
   "@progressReadingCsv": {
     "description": "Progress indicator - parsing CSV file"
   },
-  "searchSongs": "Songs",
+  "searchSongs": "Пісні",
   "@searchSongs": {
     "description": "Search result category - songs"
   },
-  "searchArtists": "Artists",
+  "searchArtists": "Виконавці",
   "@searchArtists": {
     "description": "Search result category - artists"
   },
-  "searchAlbums": "Albums",
+  "searchAlbums": "Альбоми",
   "@searchAlbums": {
     "description": "Search result category - albums"
   },
-  "searchPlaylists": "Playlists",
+  "searchPlaylists": "Списки відтворення",
   "@searchPlaylists": {
     "description": "Search result category - playlists"
   },
-  "searchSortTitle": "Sort Results",
+  "searchSortTitle": "Сортувати результати",
   "@searchSortTitle": {
     "description": "Bottom sheet title for search sort options"
   },
-  "searchSortDefault": "Default",
+  "searchSortDefault": "За замовчуванням",
   "@searchSortDefault": {
     "description": "Sort option - default API order"
   },
-  "searchSortTitleAZ": "Title (A-Z)",
+  "searchSortTitleAZ": "Назва (А-Я)",
   "@searchSortTitleAZ": {
     "description": "Sort option - title ascending"
   },
-  "searchSortTitleZA": "Title (Z-A)",
+  "searchSortTitleZA": "Назва (Я-А)",
   "@searchSortTitleZA": {
     "description": "Sort option - title descending"
   },
-  "searchSortArtistAZ": "Artist (A-Z)",
+  "searchSortArtistAZ": "Виконавець (А-Я)",
   "@searchSortArtistAZ": {
     "description": "Sort option - artist ascending"
   },
-  "searchSortArtistZA": "Artist (Z-A)",
+  "searchSortArtistZA": "Виконавець (Я-А)",
   "@searchSortArtistZA": {
     "description": "Sort option - artist descending"
   },
-  "searchSortDurationShort": "Duration (Shortest)",
+  "searchSortDurationShort": "Тривалість (найкоротша)",
   "@searchSortDurationShort": {
     "description": "Sort option - shortest duration first"
   },
-  "searchSortDurationLong": "Duration (Longest)",
+  "searchSortDurationLong": "Тривалість (найдовша)",
   "@searchSortDurationLong": {
     "description": "Sort option - longest duration first"
   },
-  "searchSortDateOldest": "Release Date (Oldest)",
+  "searchSortDateOldest": "Дата випуску (найстаріша)",
   "@searchSortDateOldest": {
     "description": "Sort option - oldest release first"
   },
-  "searchSortDateNewest": "Release Date (Newest)",
+  "searchSortDateNewest": "Дата випуску (найновіша)",
   "@searchSortDateNewest": {
     "description": "Sort option - newest release first"
   },
-  "tooltipPlay": "Play",
+  "tooltipPlay": "Відтворити",
   "@tooltipPlay": {
     "description": "Tooltip - play button"
   },
-  "filenameFormat": "Filename Format",
+  "filenameFormat": "Формат імені файлу",
   "@filenameFormat": {
     "description": "Setting title - filename pattern"
   },
-  "filenameShowAdvancedTags": "Show advanced tags",
+  "filenameShowAdvancedTags": "Показати розширені теги",
   "@filenameShowAdvancedTags": {
     "description": "Toggle label for showing advanced filename tags"
   },
-  "filenameShowAdvancedTagsDescription": "Enable formatted tags for track padding and date patterns",
+  "filenameShowAdvancedTagsDescription": "Увімкнути відформатовані теги для доповнення доріжок і шаблонів дати",
   "@filenameShowAdvancedTagsDescription": {
     "description": "Description for advanced filename tag toggle"
   },
-  "folderOrganizationNone": "No organization",
+  "folderOrganizationNone": "Жодної організації",
   "@folderOrganizationNone": {
     "description": "Folder option - flat structure"
   },
-  "folderOrganizationByPlaylist": "By Playlist",
+  "folderOrganizationByPlaylist": "За списком відтворення",
   "@folderOrganizationByPlaylist": {
     "description": "Folder option - playlist folders"
   },
-  "folderOrganizationByPlaylistSubtitle": "Separate folder for each playlist",
+  "folderOrganizationByPlaylistSubtitle": "Окрема папка для кожного списку відтворення",
   "@folderOrganizationByPlaylistSubtitle": {
     "description": "Subtitle for playlist folder option"
   },
-  "folderOrganizationByArtist": "By Artist",
+  "folderOrganizationByArtist": "За виконавцем",
   "@folderOrganizationByArtist": {
     "description": "Folder option - artist folders"
   },
-  "folderOrganizationByAlbum": "By Album",
+  "folderOrganizationByAlbum": "За альбомом",
   "@folderOrganizationByAlbum": {
     "description": "Folder option - album folders"
   },
-  "folderOrganizationByArtistAlbum": "Artist/Album",
+  "folderOrganizationByArtistAlbum": "Виконавець/Альбом",
   "@folderOrganizationByArtistAlbum": {
     "description": "Folder option - nested folders"
   },
-  "folderOrganizationDescription": "Organize downloaded files into folders",
+  "folderOrganizationDescription": "Упорядкувати завантажені файли в папки",
   "@folderOrganizationDescription": {
     "description": "Folder organization sheet description"
   },
-  "folderOrganizationNoneSubtitle": "All files in download folder",
+  "folderOrganizationNoneSubtitle": "Усі файли в папці завантажень",
   "@folderOrganizationNoneSubtitle": {
     "description": "Subtitle for no organization option"
   },
-  "folderOrganizationByArtistSubtitle": "Separate folder for each artist",
+  "folderOrganizationByArtistSubtitle": "Окрема папка для кожного виконавця",
   "@folderOrganizationByArtistSubtitle": {
     "description": "Subtitle for artist folder option"
   },
-  "folderOrganizationByAlbumSubtitle": "Separate folder for each album",
+  "folderOrganizationByAlbumSubtitle": "Окрема папка для кожного альбому",
   "@folderOrganizationByAlbumSubtitle": {
     "description": "Subtitle for album folder option"
   },
-  "folderOrganizationByArtistAlbumSubtitle": "Nested folders for artist and album",
+  "folderOrganizationByArtistAlbumSubtitle": "Вкладені папки для виконавця та альбому",
   "@folderOrganizationByArtistAlbumSubtitle": {
     "description": "Subtitle for nested folder option"
   },
-  "updateAvailable": "Update Available",
+  "updateAvailable": "Доступне оновлення",
   "@updateAvailable": {
     "description": "Update dialog title"
   },
-  "updateLater": "Later",
+  "updateLater": "Пізніше",
   "@updateLater": {
     "description": "Update button - dismiss"
   },
-  "updateStartingDownload": "Starting download...",
+  "updateStartingDownload": "Початок завантаження...",
   "@updateStartingDownload": {
     "description": "Update status - initializing"
   },
-  "updateDownloadFailed": "Download failed",
+  "updateDownloadFailed": "Не вдалося завантажити",
   "@updateDownloadFailed": {
     "description": "Update error title"
   },
-  "updateFailedMessage": "Failed to download update",
+  "updateFailedMessage": "Не вдалося завантажити оновлення",
   "@updateFailedMessage": {
     "description": "Update error message"
   },
-  "updateNewVersionReady": "A new version is ready",
+  "updateNewVersionReady": "Доступна нова версія",
   "@updateNewVersionReady": {
     "description": "Update subtitle"
   },
-  "updateCurrent": "Current",
+  "updateCurrent": "Поточна",
   "@updateCurrent": {
     "description": "Label for current version"
   },
-  "updateNew": "New",
+  "updateNew": "Нова",
   "@updateNew": {
     "description": "Label for new version"
   },
-  "updateDownloading": "Downloading...",
+  "updateDownloading": "Завантаження...",
   "@updateDownloading": {
     "description": "Update status - downloading"
   },
-  "updateWhatsNew": "What's New",
+  "updateWhatsNew": "Що нового",
   "@updateWhatsNew": {
     "description": "Changelog section title"
   },
-  "updateDownloadInstall": "Download & Install",
+  "updateDownloadInstall": "Завантажити та встановити",
   "@updateDownloadInstall": {
     "description": "Update button - download and install"
   },
-  "updateDontRemind": "Don't remind",
+  "updateDontRemind": "Не нагадувати",
   "@updateDontRemind": {
     "description": "Update button - skip this version"
   },
-  "providerPriorityTitle": "Provider Priority",
+  "providerPriorityTitle": "Пріоритет постачальника",
   "@providerPriorityTitle": {
     "description": "Provider priority page title"
   },
-  "providerPriorityDescription": "Drag to reorder download providers. The app will try providers from top to bottom when downloading tracks.",
+  "providerPriorityDescription": "Перетягніть, щоб змінити порядок постачальників завантажень. Під час завантаження треків програма використовуватиме постачальників зверху вниз.",
   "@providerPriorityDescription": {
     "description": "Provider priority page description"
   },
-  "providerPriorityInfo": "If a track is not available on the first provider, the app will automatically try the next one.",
+  "providerPriorityInfo": "Якщо трек недоступний у першого провайдера, додаток автоматично спробує наступного.",
   "@providerPriorityInfo": {
     "description": "Info tip about fallback behavior"
   },
-  "providerPriorityFallbackExtensionsTitle": "Extension Fallback",
+  "providerPriorityFallbackExtensionsTitle": "Резервне розширення",
   "@providerPriorityFallbackExtensionsTitle": {
     "description": "Section title for choosing which download extensions can be used as fallback providers"
   },
-  "providerPriorityFallbackExtensionsDescription": "Choose which installed download extensions can be used during automatic fallback. Built-in providers still follow the priority order above.",
+  "providerPriorityFallbackExtensionsDescription": "Виберіть, які встановлені розширення завантаження можна використовувати під час автоматичного відновлення до попереднього режиму. Вбудовані постачальники все одно дотримуються порядку пріоритетності, зазначеного вище.",
   "@providerPriorityFallbackExtensionsDescription": {
     "description": "Section description for extension fallback selection"
   },
-  "providerPriorityFallbackExtensionsHint": "Only enabled extensions with download-provider capability are listed here.",
+  "providerPriorityFallbackExtensionsHint": "Тут перелічені лише ввімкнені розширення з можливістю завантаження через постачальника послуг.",
   "@providerPriorityFallbackExtensionsHint": {
     "description": "Hint below the extension fallback selection list"
   },
-  "providerBuiltIn": "Built-in",
+  "providerBuiltIn": "Вбудований",
   "@providerBuiltIn": {
     "description": "Label for built-in providers (Tidal/Qobuz)"
   },
-  "providerExtension": "Extension",
+  "providerExtension": "Розширення",
   "@providerExtension": {
     "description": "Label for extension-provided providers"
   },
-  "metadataProviderPriorityTitle": "Metadata Priority",
+  "metadataProviderPriorityTitle": "Пріоритет метаданих",
   "@metadataProviderPriorityTitle": {
     "description": "Metadata priority page title"
   },
-  "metadataProviderPriorityDescription": "Drag to reorder metadata providers. The app will try providers from top to bottom when searching for tracks and fetching metadata.",
+  "metadataProviderPriorityDescription": "Перетягніть, щоб змінити порядок постачальників метаданих. Додаток шукатиме постачальників зверху вниз під час пошуку треків та отримання метаданих.",
   "@metadataProviderPriorityDescription": {
     "description": "Metadata priority page description"
   },
-  "metadataProviderPriorityInfo": "Deezer has no rate limits and is recommended as primary. Spotify may rate limit after many requests.",
+  "metadataProviderPriorityInfo": "Deezer не має обмежень за швидкістю та рекомендований як основний сервіс. Spotify може обмежувати швидкість після великої кількості запитів.",
   "@metadataProviderPriorityInfo": {
     "description": "Info tip about rate limits"
   },
-  "metadataNoRateLimits": "No rate limits",
+  "metadataNoRateLimits": "Без обмежень щодо швидкості",
   "@metadataNoRateLimits": {
     "description": "Deezer provider description"
   },
@@ -4049,23 +4049,23 @@
   "@editMetadataFieldIsrc": {
     "description": "Chip label for ISRC field in auto-fill selector"
   },
-  "editMetadataFieldLabel": "Label",
+  "editMetadataFieldLabel": "Лейбл",
   "@editMetadataFieldLabel": {
     "description": "Chip label for label field in auto-fill selector"
   },
-  "editMetadataFieldCopyright": "Copyright",
+  "editMetadataFieldCopyright": "Авторське право",
   "@editMetadataFieldCopyright": {
     "description": "Chip label for copyright field in auto-fill selector"
   },
-  "editMetadataFieldCover": "Cover Art",
+  "editMetadataFieldCover": "Обкладинка",
   "@editMetadataFieldCover": {
     "description": "Chip label for cover art field in auto-fill selector"
   },
-  "editMetadataSelectAll": "All",
+  "editMetadataSelectAll": "Усі",
   "@editMetadataSelectAll": {
     "description": "Button to select all fields for auto-fill"
   },
-  "editMetadataSelectEmpty": "Empty only",
+  "editMetadataSelectEmpty": "Порожні (без мета даних)",
   "@editMetadataSelectEmpty": {
     "description": "Button to select only fields that are currently empty"
   },
