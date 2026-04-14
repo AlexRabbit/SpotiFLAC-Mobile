@@ -91,13 +91,25 @@ import Gobackend  // Import Go framework
         let code =
             q.first { $0.name == "code" }?.value?.trimmingCharacters(
                 in: .whitespacesAndNewlines) ?? ""
-        let state =
+        var state =
             q.first { $0.name == "state" }?.value?.trimmingCharacters(
                 in: .whitespacesAndNewlines) ?? ""
         if code.isEmpty { return false }
         if state.isEmpty {
-            NSLog("SpotiFLAC: Extension OAuth redirect missing state (extension id)")
-            return false
+            // Fallback: recover extension id from pending auth requests.
+            var err: NSError?
+            let pendingJson = GobackendGetAllPendingAuthRequestsJSON(&err) ?? ""
+            if err == nil,
+               let data = pendingJson.data(using: .utf8),
+               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+               arr.count == 1,
+               let extId = arr.first?["extension_id"] as? String,
+               !extId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                state = extId.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                NSLog("SpotiFLAC: Extension OAuth redirect missing state and no pending auth request was resolvable")
+                return false
+            }
         }
         streamQueue.async {
             var err: NSError?

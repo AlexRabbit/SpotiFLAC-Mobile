@@ -2029,9 +2029,29 @@ class MainActivity: FlutterFragmentActivity() {
         handleExtensionOAuthIntent(intent)
     }
 
+    private fun resolveOAuthExtensionId(uri: Uri): String {
+        val state = uri.getQueryParameter("state")?.trim().orEmpty()
+        if (state.isNotEmpty()) {
+            return state
+        }
+        // Fallback: if callback came without state, recover from pending auth requests.
+        return try {
+            val pendingJson = Gobackend.getAllPendingAuthRequestsJSON()
+            if (pendingJson.isNullOrBlank()) return ""
+            val arr = JSONArray(pendingJson)
+            if (arr.length() == 1) {
+                arr.optJSONObject(0)?.optString("extension_id", "")?.trim().orEmpty()
+            } else {
+                ""
+            }
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     /**
      * Deliver Spotify (or other) OAuth authorization code to the extension runtime
-     * and run its token exchange (e.g. completeSpotifyLogin). State must be the extension id.
+     * and run its token exchange (e.g. completeSpotifyLogin).
      */
     private fun handleExtensionOAuthIntent(intent: Intent?) {
         val uri = intent?.data ?: return
@@ -2051,9 +2071,9 @@ class MainActivity: FlutterFragmentActivity() {
         if (code.isEmpty()) {
             return
         }
-        val extId = uri.getQueryParameter("state")?.trim().orEmpty()
+        val extId = resolveOAuthExtensionId(uri)
         if (extId.isEmpty()) {
-            android.util.Log.w("SpotiFLAC", "Extension OAuth redirect missing state (extension id)")
+            android.util.Log.w("SpotiFLAC", "Extension OAuth redirect missing state and no pending auth request was resolvable")
             return
         }
         intent.data = null
