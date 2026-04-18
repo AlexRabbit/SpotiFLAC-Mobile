@@ -118,9 +118,16 @@ type ExtDownloadResult struct {
 	AlbumArtist   string                  `json:"album_artist,omitempty"`
 	TrackNumber   int                     `json:"track_number,omitempty"`
 	DiscNumber    int                     `json:"disc_number,omitempty"`
+	TotalTracks   int                     `json:"total_tracks,omitempty"`
+	TotalDiscs    int                     `json:"total_discs,omitempty"`
 	ReleaseDate   string                  `json:"release_date,omitempty"`
 	CoverURL      string                  `json:"cover_url,omitempty"`
 	ISRC          string                  `json:"isrc,omitempty"`
+	Genre         string                  `json:"genre,omitempty"`
+	Label         string                  `json:"label,omitempty"`
+	Copyright     string                  `json:"copyright,omitempty"`
+	Composer      string                  `json:"composer,omitempty"`
+	LyricsLRC     string                  `json:"lyrics_lrc,omitempty"`
 	DecryptionKey string                  `json:"decryption_key,omitempty"`
 	Decryption    *DownloadDecryptionInfo `json:"decryption,omitempty"`
 }
@@ -951,6 +958,19 @@ func isBuiltInDownloadProvider(providerID string) bool {
 	}
 }
 
+func normalizeQualityForBuiltIn(quality string) string {
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "alac", "hi_res_lossless", "lossless":
+		return "HI_RES_LOSSLESS"
+	case "atmos", "ac3", "dolby_atmos":
+		return "LOSSLESS"
+	case "aac", "aac-legacy":
+		return "LOSSLESS"
+	default:
+		return quality
+	}
+}
+
 func normalizeBuiltInMetadataTrack(track TrackMetadata, providerID string) ExtTrackMetadata {
 	deezerID := ""
 	tidalID := ""
@@ -1319,8 +1339,8 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 
 	if req.Source != "" &&
 		!isBuiltInProvider(strings.ToLower(req.Source)) &&
-		(!strictMode || selectedProvider == "" || strings.EqualFold(selectedProvider, req.Source)) {
-		GoLog("[DownloadWithExtensionFallback] Track source is extension '%s', trying it first\n", req.Source)
+		selectedProvider == req.Source {
+		GoLog("[DownloadWithExtensionFallback] Track source is extension '%s' matching selected provider, trying it first\n", req.Source)
 
 		ext, err := extManager.GetExtension(req.Source)
 		if err == nil && ext.Enabled && ext.Error == "" && ext.Manifest.IsDownloadProvider() {
@@ -1402,6 +1422,12 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 					if result.DiscNumber > 0 {
 						resp.DiscNumber = result.DiscNumber
 					}
+					if result.TotalTracks > 0 {
+						resp.TotalTracks = result.TotalTracks
+					}
+					if result.TotalDiscs > 0 {
+						resp.TotalDiscs = result.TotalDiscs
+					}
 					if result.ReleaseDate != "" {
 						resp.ReleaseDate = result.ReleaseDate
 					}
@@ -1411,8 +1437,29 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 					if result.ISRC != "" {
 						resp.ISRC = result.ISRC
 					}
+					if result.Genre != "" {
+						resp.Genre = result.Genre
+					}
+					if result.Label != "" {
+						resp.Label = result.Label
+					}
+					if result.Copyright != "" {
+						resp.Copyright = result.Copyright
+					}
+					if result.Composer != "" {
+						resp.Composer = result.Composer
+					}
+					if result.LyricsLRC != "" {
+						resp.LyricsLRC = result.LyricsLRC
+					}
 				}
 
+				if req.TrackName != "" && resp.Title == "" {
+					resp.Title = req.TrackName
+				}
+				if req.ArtistName != "" && resp.Artist == "" {
+					resp.Artist = req.ArtistName
+				}
 				if req.AlbumName != "" && resp.Album == "" {
 					resp.Album = req.AlbumName
 				}
@@ -1431,8 +1478,17 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 				if req.DiscNumber > 0 && resp.DiscNumber == 0 {
 					resp.DiscNumber = req.DiscNumber
 				}
+				if req.TotalTracks > 0 && resp.TotalTracks == 0 {
+					resp.TotalTracks = req.TotalTracks
+				}
+				if req.TotalDiscs > 0 && resp.TotalDiscs == 0 {
+					resp.TotalDiscs = req.TotalDiscs
+				}
 				if req.CoverURL != "" && resp.CoverURL == "" {
 					resp.CoverURL = req.CoverURL
+				}
+				if req.Composer != "" && resp.Composer == "" {
+					resp.Composer = req.Composer
 				}
 
 				return resp, nil
@@ -1490,13 +1546,17 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 		GoLog("[DownloadWithExtensionFallback] Trying provider: %s\n", providerID)
 
 		if isBuiltInDownloadProvider(providerIDNormalized) {
+			req.OutputExt = ""
 			if (req.Genre == "" || req.Label == "" || req.Copyright == "") &&
 				req.ISRC != "" {
 				GoLog("[DownloadWithExtensionFallback] Enriching extra metadata from ISRC: %s\n", req.ISRC)
 				enrichExtraMetadataByISRC("DownloadWithExtensionFallback", req.ISRC, &req.Genre, &req.Label, &req.Copyright)
 			}
 
+			origQuality := req.Quality
+			req.Quality = normalizeQualityForBuiltIn(req.Quality)
 			result, err := tryBuiltInProvider(providerIDNormalized, req)
+			req.Quality = origQuality
 			if err == nil && result.Success {
 				result.Service = providerIDNormalized
 				if req.Label != "" {
@@ -1547,6 +1607,7 @@ func DownloadWithExtensionFallback(req DownloadRequest) (*DownloadResponse, erro
 				continue
 			}
 
+			req.OutputExt = ""
 			outputPath := buildOutputPathForExtension(req, ext)
 			if req.ItemID != "" {
 				StartItemProgress(req.ItemID)
@@ -1857,6 +1918,9 @@ func buildOutputPathForExtension(req DownloadRequest, ext *loadedExtension) stri
 func canEmbedGenreLabel(filePath string) bool {
 	path := strings.TrimSpace(filePath)
 	if path == "" || strings.HasPrefix(path, "content://") || strings.HasPrefix(path, "/proc/self/fd/") {
+		return false
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".flac" {
 		return false
 	}
 	if !filepath.IsAbs(path) {

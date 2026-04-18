@@ -574,6 +574,7 @@ class DownloadHistoryNotifier extends Notifier<DownloadHistoryState> {
     if (trimmed.startsWith('content://')) return true;
     return trimmed.endsWith('.flac') ||
         trimmed.endsWith('.m4a') ||
+        trimmed.endsWith('.mp4') ||
         trimmed.endsWith('.aac') ||
         trimmed.endsWith('.mp3') ||
         trimmed.endsWith('.opus') ||
@@ -595,6 +596,7 @@ class DownloadHistoryNotifier extends Notifier<DownloadHistoryState> {
         !hasResolvedSpecs &&
         (trimmedPath.endsWith('.flac') ||
             trimmedPath.endsWith('.m4a') ||
+            trimmedPath.endsWith('.mp4') ||
             trimmedPath.endsWith('.aac') ||
             trimmedPath.startsWith('content://'));
 
@@ -2359,6 +2361,9 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       final normalized = preferred.startsWith('.')
           ? preferred.toLowerCase()
           : '.${preferred.toLowerCase()}';
+      if (normalized == '.mp4') {
+        return '.m4a';
+      }
       const allowed = <String>{'.flac', '.m4a', '.mp3', '.opus'};
       if (allowed.contains(normalized)) {
         return normalized;
@@ -2367,6 +2372,21 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     }
 
     return null;
+  }
+
+  bool _extensionPreservesNativeOutputExt(String service, String ext) {
+    final normalizedService = service.trim().toLowerCase();
+    final normalizedExt = ext.trim().toLowerCase();
+    if (normalizedService.isEmpty || normalizedExt.isEmpty) return false;
+
+    final extensionState = ref.read(extensionProvider);
+    return extensionState.extensions.any(
+      (ext) =>
+          ext.enabled &&
+          ext.hasDownloadProvider &&
+          ext.id.toLowerCase() == normalizedService &&
+          ext.preservedNativeOutputExtensions.contains(normalizedExt),
+    );
   }
 
   String _determineOutputExt(String quality, String service) {
@@ -2387,6 +2407,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   String _mimeTypeForExt(String ext) {
     switch (ext.toLowerCase()) {
       case '.m4a':
+      case '.mp4':
         return 'audio/mp4';
       case '.mp3':
         return 'audio/mpeg';
@@ -3689,6 +3710,8 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   ) {
     final backendTrackNum = _parsePositiveInt(backendResult['track_number']);
     final backendDiscNum = _parsePositiveInt(backendResult['disc_number']);
+    final backendTotalTracks = _parsePositiveInt(backendResult['total_tracks']);
+    final backendTotalDiscs = _parsePositiveInt(backendResult['total_discs']);
     final backendYear = normalizeOptionalString(
       backendResult['release_date'] as String?,
     );
@@ -3716,7 +3739,9 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         backendIsrc != null ||
         backendCoverUrl != null ||
         backendAlbumArtist != null ||
-        backendComposer != null;
+        backendComposer != null ||
+        backendTotalTracks != null ||
+        backendTotalDiscs != null;
 
     if (!hasOverrides) {
       return baseTrack;
@@ -3735,12 +3760,12 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       isrc: backendIsrc ?? baseTrack.isrc,
       trackNumber: backendTrackNum ?? baseTrack.trackNumber,
       discNumber: backendDiscNum ?? baseTrack.discNumber,
-      totalDiscs: baseTrack.totalDiscs,
+      totalDiscs: backendTotalDiscs ?? baseTrack.totalDiscs,
       releaseDate: backendYear ?? baseTrack.releaseDate,
       deezerId: baseTrack.deezerId,
       availability: baseTrack.availability,
       albumType: baseTrack.albumType,
-      totalTracks: baseTrack.totalTracks,
+      totalTracks: backendTotalTracks ?? baseTrack.totalTracks,
       composer: backendComposer ?? baseTrack.composer,
       source: baseTrack.source,
     );
@@ -4873,6 +4898,10 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         final actualService =
             ((result['service'] as String?)?.toLowerCase()) ??
             item.service.toLowerCase();
+        final preferredOutputExt = _extensionPreferredOutputExt(actualService);
+        final shouldPreserveNativeM4a =
+            preferredOutputExt == '.m4a' ||
+            _extensionPreservesNativeOutputExt(actualService, '.m4a');
         final decryptionDescriptor =
             DownloadDecryptionDescriptor.fromDownloadResult(result);
         trackToDownload = _buildTrackForMetadataEmbedding(
@@ -4998,6 +5027,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         final isM4aFile =
             filePath != null &&
             (filePath.endsWith('.m4a') ||
+                filePath.endsWith('.mp4') ||
                 (mimeType != null && mimeType.contains('mp4')));
         final isFlacFile =
             filePath != null &&
@@ -5013,7 +5043,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
 
         if (shouldForceTidalSafM4aHandling) {
           _log.w(
-            'Tidal SAF file is labeled FLAC but backend returned DASH/M4A stream; preserving it as M4A instead.',
+            'Tidal SAF file is labeled FLAC but backend returned DASH/M4A stream; converting it back to FLAC.',
           );
         }
 
@@ -5130,7 +5160,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   }
                 }
               }
-            } else {
+            } else if (shouldPreserveNativeM4a) {
               _log.d('M4A file detected (SAF), preserving native container...');
               final tempPath = await _copySafToTemp(currentFilePath);
               if (tempPath != null) {
@@ -5186,6 +5216,85 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   try {
                     await File(tempPath).delete();
                   } catch (_) {}
+                }
+              }
+            } else {
+              _log.d('M4A file detected (SAF), converting to FLAC...');
+              final tempPath = await _copySafToTemp(currentFilePath);
+              if (tempPath != null) {
+                String? flacPath;
+                try {
+                  final length = await File(tempPath).length();
+                  if (length < 1024) {
+                    _log.w('Temp M4A is too small (<1KB), skipping conversion');
+                  } else {
+                    updateItemStatus(
+                      item.id,
+                      DownloadStatus.finalizing,
+                      progress: 0.95,
+                    );
+                    flacPath = await FFmpegService.convertM4aToFlac(tempPath);
+                    if (flacPath != null) {
+                      _log.d('Converted to FLAC (temp): $flacPath');
+                      _log.d(
+                        'Embedding metadata and cover to converted FLAC...',
+                      );
+                      final finalTrack = _buildTrackForMetadataEmbedding(
+                        trackToDownload,
+                        result,
+                        resolvedAlbumArtist,
+                      );
+
+                      final backendGenre = result['genre'] as String?;
+                      final backendLabel = result['label'] as String?;
+                      final backendCopyright = result['copyright'] as String?;
+
+                      await _embedMetadataToFile(
+                        flacPath,
+                        finalTrack,
+                        format: 'flac',
+                        genre: backendGenre ?? genre,
+                        label: backendLabel ?? label,
+                        copyright: backendCopyright,
+                        downloadService: item.service,
+                        writeExternalLrc: false,
+                      );
+
+                      final newFileName = '${safBaseName ?? 'track'}.flac';
+                      final newUri = await _writeTempToSaf(
+                        treeUri: settings.downloadTreeUri,
+                        relativeDir: effectiveOutputDir,
+                        fileName: newFileName,
+                        mimeType: _mimeTypeForExt('.flac'),
+                        srcPath: flacPath,
+                      );
+
+                      if (newUri != null) {
+                        if (newUri != currentFilePath) {
+                          await _deleteSafFile(currentFilePath);
+                        }
+                        filePath = newUri;
+                        finalSafFileName = newFileName;
+                      } else {
+                        _log.w('Failed to write FLAC to SAF, keeping M4A');
+                      }
+                    } else {
+                      _log.w(
+                        'FFmpeg conversion returned null, keeping M4A file',
+                      );
+                    }
+                  }
+                } catch (e) {
+                  _log.w('SAF M4A->FLAC conversion failed: $e');
+                } finally {
+                  try {
+                    await File(tempPath).delete();
+                  } catch (_) {}
+                  if (flacPath != null) {
+                    try {
+                      await File(flacPath).delete();
+                    } catch (_) {}
+                  }
                 }
               }
             }
@@ -5264,7 +5373,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                 _log.w('M4A conversion process failed: $e, keeping M4A file');
                 actualQuality = 'AAC 320kbps';
               }
-            } else {
+            } else if (shouldPreserveNativeM4a) {
               _log.d('M4A file detected, preserving native container...');
 
               try {
@@ -5273,7 +5382,8 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                 if (!await file.exists()) {
                   _log.e('File does not exist at path: $filePath');
                 } else {
-                  if (!targetPath.toLowerCase().endsWith('.m4a')) {
+                  if (!(targetPath.toLowerCase().endsWith('.m4a') ||
+                      targetPath.toLowerCase().endsWith('.mp4'))) {
                     final renamedPath = targetPath.replaceAll(
                       RegExp(r'\.[^.]+$'),
                       '.m4a',
@@ -5317,6 +5427,84 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                 }
               } catch (e) {
                 _log.w('Native M4A handling failed: $e');
+              }
+            } else {
+              _log.d(
+                'M4A file detected (Hi-Res DASH stream), attempting conversion to FLAC...',
+              );
+
+              try {
+                final file = File(currentFilePath);
+                if (!await file.exists()) {
+                  _log.e('File does not exist at path: $filePath');
+                } else {
+                  final length = await file.length();
+                  _log.i('File size before conversion: ${length / 1024} KB');
+
+                  if (length < 1024) {
+                    _log.w(
+                      'File is too small (<1KB), skipping conversion. Download might be corrupt.',
+                    );
+                  } else {
+                    updateItemStatus(
+                      item.id,
+                      DownloadStatus.finalizing,
+                      progress: 0.95,
+                    );
+                    final flacPath = await FFmpegService.convertM4aToFlac(
+                      currentFilePath,
+                    );
+
+                    if (flacPath != null) {
+                      filePath = flacPath;
+                      _log.d('Converted to FLAC: $flacPath');
+
+                      _log.d(
+                        'Embedding metadata and cover to converted FLAC...',
+                      );
+                      try {
+                        final finalTrack = _buildTrackForMetadataEmbedding(
+                          trackToDownload,
+                          result,
+                          resolvedAlbumArtist,
+                        );
+
+                        final backendGenre = result['genre'] as String?;
+                        final backendLabel = result['label'] as String?;
+                        final backendCopyright = result['copyright'] as String?;
+
+                        if (backendGenre != null ||
+                            backendLabel != null ||
+                            backendCopyright != null) {
+                          _log.d(
+                            'Extended metadata from backend - Genre: $backendGenre, Label: $backendLabel, Copyright: $backendCopyright',
+                          );
+                        }
+
+                        await _embedMetadataToFile(
+                          flacPath,
+                          finalTrack,
+                          format: 'flac',
+                          genre: backendGenre ?? genre,
+                          label: backendLabel ?? label,
+                          copyright: backendCopyright,
+                          downloadService: item.service,
+                        );
+                        _log.d('Metadata and cover embedded successfully');
+                      } catch (e) {
+                        _log.w('Warning: Failed to embed metadata/cover: $e');
+                      }
+                    } else {
+                      _log.w(
+                        'FFmpeg conversion returned null, keeping M4A file',
+                      );
+                    }
+                  }
+                }
+              } catch (e) {
+                _log.w(
+                  'FFmpeg conversion process failed: $e, keeping M4A file',
+                );
               }
             }
           }
@@ -5632,12 +5820,15 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
           final backendYear = result['release_date'] as String?;
           final backendTrackNum = result['track_number'] as int?;
           final backendDiscNum = result['disc_number'] as int?;
+          final backendTotalTracks = result['total_tracks'] as int?;
+          final backendTotalDiscs = result['total_discs'] as int?;
           final backendBitDepth = result['actual_bit_depth'] as int?;
           final backendSampleRate = result['actual_sample_rate'] as int?;
           final backendISRC = result['isrc'] as String?;
           final backendGenre = result['genre'] as String?;
           final backendLabel = result['label'] as String?;
           final backendCopyright = result['copyright'] as String?;
+          final backendComposer = result['composer'] as String?;
           final effectiveGenre =
               normalizeOptionalString(backendGenre) ??
               normalizeOptionalString(genre) ??
@@ -5658,6 +5849,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
               filePath.startsWith('content://') ||
               lowerFilePath.endsWith('.flac') ||
               lowerFilePath.endsWith('.m4a') ||
+              lowerFilePath.endsWith('.mp4') ||
               lowerFilePath.endsWith('.aac') ||
               lowerFilePath.endsWith('.mp3') ||
               lowerFilePath.endsWith('.opus') ||
@@ -5745,11 +5937,17 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   trackNumber: (backendTrackNum != null && backendTrackNum > 0)
                       ? backendTrackNum
                       : trackToDownload.trackNumber,
-                  totalTracks: trackToDownload.totalTracks,
+                  totalTracks:
+                      (backendTotalTracks != null && backendTotalTracks > 0)
+                      ? backendTotalTracks
+                      : trackToDownload.totalTracks,
                   discNumber: (backendDiscNum != null && backendDiscNum > 0)
                       ? backendDiscNum
                       : trackToDownload.discNumber,
-                  totalDiscs: trackToDownload.totalDiscs,
+                  totalDiscs:
+                      (backendTotalDiscs != null && backendTotalDiscs > 0)
+                      ? backendTotalDiscs
+                      : trackToDownload.totalDiscs,
                   duration: trackToDownload.duration,
                   releaseDate: (backendYear != null && backendYear.isNotEmpty)
                       ? backendYear
@@ -5758,7 +5956,10 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
                   bitDepth: historyBitDepth,
                   sampleRate: historySampleRate,
                   genre: effectiveGenre,
-                  composer: trackToDownload.composer,
+                  composer:
+                      (backendComposer != null && backendComposer.isNotEmpty)
+                      ? backendComposer
+                      : trackToDownload.composer,
                   label: effectiveLabel,
                   copyright: effectiveCopyright,
                 ),
